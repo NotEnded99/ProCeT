@@ -1,0 +1,42 @@
+{
+  "system_type": "barr3",
+  "training_params": {
+    "learning_rate": 0.001,
+    "lambda_safe": 0.07571213057900479,
+    "lambda_unsafe_max": 7.480184736940928,
+    "lambda_cbf": 8.790715534448122,
+    "unsafe_margin": 0.025067034542051836,
+    "safe_margin": 0.14806816731717287,
+    "data_regen_freq": 50,
+    "use_wandb": true,
+    "wandb_viz_freq": 0,
+    "validate_during_training_freq": 500,
+    "validate_num_samples": 5000,
+    "proportions": {
+      "safe": 0.1,
+      "unsafe": 0.1,
+      "boundary": 0.5
+    }
+  },
+  "validation_results": {
+    "total_violations": 0,
+    "unsafe_set_violations": 0,
+    "set_invariance_violations": 0,
+    "violation_rate": 0.0,
+    "unsafe_classification_rate": 100.0,
+    "set_invariance_satisfaction_rate": 100.0,
+    "invariant_set_size": 37116,
+    "invariant_set_coverage": 77.15622076707203,
+    "num_samples_checked": 50000,
+    "num_safe_samples": 48105,
+    "num_unsafe_samples": 1895,
+    "validity_score": 100.77156066894531
+  },
+  "metrics": {
+    "validity_score": 100.77156066894531,
+    "violation_rate": 0.0,
+    "unsafe_classification_rate": 100.0,
+    "set_invariance_satisfaction_rate": 100.0,
+    "invariant_set_coverage": 77.15622076707203
+  }
+}

@@ -1,0 +1,57 @@
+{
+  "system_type": "cartpole",
+  "training_params": {
+    "learning_rate": 0.0009724068196756258,
+    "num_epochs": 10000,
+    "batch_size": 32768,
+    "data_regen_freq": 50,
+    "proportions": {
+      "boundary": 0.1,
+      "safe": 0.01,
+      "unsafe": 0.01
+    },
+    "alpha": 1,
+    "lambda_safe": 0.08445010941257317,
+    "lambda_unsafe": 16.550027024482386,
+    "lambda_unsafe_max": 0.10463854227777514,
+    "lambda_cbf": 5.989280115572582,
+    "lambda_bndry": 0,
+    "unsafe_margin": 0.4126859701258805,
+    "safe_margin": 0.030609211475608578,
+    "cbf_margin": 0.042091479398929765,
+    "weight_decay": 1e-05,
+    "min_epochs": 1000,
+    "curriculum_learning": "True",
+    "curriculum_min_epochs": 1000,
+    "save_path_torch": null,
+    "save_path_onnx": null,
+    "use_amp": true,
+    "use_wandb": true,
+    "wandb_project": "cbf-training",
+    "wandb_viz_freq": 0,
+    "wandb_metrics_freq": 10,
+    "validate_during_training_freq": 0,
+    "validate_num_samples": 2000
+  },
+  "validation_results": {
+    "total_violations": 0,
+    "unsafe_set_violations": 0,
+    "set_invariance_violations": 0,
+    "violation_rate": 0.0,
+    "unsafe_classification_rate": 100.0,
+    "set_invariance_satisfaction_rate": 100.0,
+    "invariant_set_size": 40813,
+    "invariant_set_coverage": 98.0539605506571,
+    "num_samples_checked": 50000,
+    "num_safe_samples": 41623,
+    "num_unsafe_samples": 8377,
+    "validity_score": 104.90269470214844
+  },
+  "metrics": {
+    "validity_score": 104.90269470214844,
+    "violation_rate": 0.0,
+    "unsafe_classification_rate": 100.0,
+    "set_invariance_satisfaction_rate": 100.0,
+    "invariant_set_coverage": 98.0539605506571
+  }
+}

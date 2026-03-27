@@ -1,0 +1,7 @@
+[flake8]
+max-line-length = 160
+ignore = E203, W503, F841, F401, F541, F824
+exclude = __pycache__, .git, build, dist, *.egg-info
+per-file-ignores = 
+    # Allow long lines in test files for descriptive test names
+    tests/*:E501
