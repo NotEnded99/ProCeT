@@ -49,7 +49,6 @@ def verify_cbf(
     wandb_name=None,
     wandb_tags=None,
     batch_size=512,
-    max_depth=None,
 ):
     """
     Main function to verify a neural control barrier function using CROWN linearization.
@@ -66,7 +65,6 @@ def verify_cbf(
         wandb_project: W&B project name
         wandb_name: W&B run name (defaults to system_name_cbf_verification)
         wandb_tags: W&B tags for the run
-        max_depth: Maximum depth for region splitting (None for unlimited)
 
     Returns:
         Verification results with guaranteed soundness for SAT results
@@ -108,7 +106,6 @@ def verify_cbf(
         barrier_model_path,
         dynamics_model,
         use_gpu=use_gpu,
-        max_depth=max_depth,
     )
 
     # Generate initial samples
@@ -236,21 +233,14 @@ class CBFVerificationStrategy:
     Verification strategy for CBF conditions using CROWN linearization.
     """
 
-    def __init__(self, network_path, dynamics_model, use_gpu=True, max_depth=None):
+    def __init__(self, network_path, dynamics_model, use_gpu=True):
         self.network_path = network_path
         self.dynamics_model = dynamics_model
         self.use_gpu = use_gpu
-        self.max_depth = max_depth
 
     @staticmethod
-    def _handle_split(sample, start_time, results, sample_idx, min_volume, split_type, unsat_type, max_depth=None):
-        """Record a MAYBE result via splitting or an UNSAT counterexample if splitting is not possible or depth limited."""
-        # Check if maximum depth is reached
-        if max_depth is not None and sample.depth >= max_depth:
-            counterexample = sample.center
-            results[sample_idx] = SampleResultUNSAT(sample, start_time, [counterexample], result_type="depth_limit_reached")
-            return
-
+    def _handle_split(sample, start_time, results, sample_idx, min_volume, split_type, unsat_type):
+        """Record a MAYBE result via splitting or an UNSAT counterexample if splitting is not possible."""
         if sample._compute_volume() > min_volume:
             new_samples = sample.split()
             if new_samples:
@@ -292,7 +282,6 @@ class CBFVerificationStrategy:
         _LOCAL.dynamics_model = self.dynamics_model
         _LOCAL.device = device
         _LOCAL.dtype = dtype
-        _LOCAL.max_depth = self.max_depth
 
     @staticmethod
     def verify_batch(batch):
@@ -304,7 +293,6 @@ class CBFVerificationStrategy:
             _LOCAL.torch_model,
             _LOCAL.device,
             _LOCAL.dtype,
-            max_depth=_LOCAL.max_depth,
         )
 
     @staticmethod
@@ -318,7 +306,6 @@ class CBFVerificationStrategy:
         dtype,
         min_volume=1e-8,
         find_counterexample=False,
-        max_depth=None,
     ):
         """
         Helper method to verify a batch of samples using the paper's method.
@@ -372,7 +359,6 @@ class CBFVerificationStrategy:
                         min_volume=min_volume,
                         split_type="case_1_boundary_unsafe",
                         unsat_type="unsafe_cannot_split",
-                        max_depth=max_depth,
                     )
 
             # Case 3: h(x) >= 0 somewhere on this region (barrier indicates somewhere safe)
@@ -444,7 +430,6 @@ class CBFVerificationStrategy:
                     min_volume=min_volume,
                     split_type="case_2_cbf_failure" if reason[subsample_idx] == "case_2" else "case_3_fallback",
                     unsat_type="safe_cbf_violation",
-                    max_depth=max_depth,
                 )
 
                 continue

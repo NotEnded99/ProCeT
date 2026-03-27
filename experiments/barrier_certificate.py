@@ -14,10 +14,10 @@ from lbp_neural_cbf.cbf.cbf_dynamics import Simple2DSystem, CartPoleSystem, Rend
 from lbp_neural_cbf.cbf.fossil_dynamics import Barrier1System, Barrier2System, Barrier3System, Barrier4System, HighOrd2System, HighOrd4System, HighOrd6System, HighOrd8System
 from lbp_neural_cbf.visualization.cbf_plotter import create_cbf_verification_plotter
 
-def main(system_type="barr3", train=False, verify=True, alpha=1.0, region_type="simplicial", executor_type="single"):
+def main(system_type="barr1", train=False, verify=True, alpha=1.0, region_type="simplicial", executor_type="single", max_depth=None):
     """
     Main script for training and verifying neural control barrier functions.
-    
+
     Args:
         system_type: Type of dynamical system ("simple2d", "barr1", "barr2", "barr3", "barr4", "hiord2", "hiord4", "cartpole", "hiord6", "hiord8", "rendezvousdocking")
         train: Whether to train the CBF
@@ -25,6 +25,7 @@ def main(system_type="barr3", train=False, verify=True, alpha=1.0, region_type="
         alpha: Alpha parameter for the CBF
         region_type: Type of regions to use for verification ("hyperrectangular" or "simplicial")
         executor_type: Type of executor ("single", "multi-thread", or "multi-process")
+        max_depth: Maximum depth for region splitting (None for unlimited)
     """
     
     print("="*60)
@@ -135,7 +136,8 @@ def main(system_type="barr3", train=False, verify=True, alpha=1.0, region_type="
         # Verification parameters
         verification_params = {
             'executor_type': executor_type,  # Type of executor (single, multi-thread, or multi-process)
-            'region_type': region_type  # Use specified region type for verification
+            'region_type': region_type,  # Use specified region type for verification
+            'max_depth': max_depth  # Maximum depth for region splitting
         }
         
         print("Verification parameters:")
@@ -199,9 +201,39 @@ def main(system_type="barr3", train=False, verify=True, alpha=1.0, region_type="
                 print("\n  ⚠️  CBF violations found - the barrier function may not satisfy the CBF condition!")
 
 if __name__ == "__main__":
+    import argparse
+
     # Set multiprocessing start method to 'spawn' for CUDA compatibility
     # This must be done before any CUDA operations
     multiprocessing.set_start_method('spawn', force=True)
-    
-    # Run single experiment with default parameters
-    main()
+
+    parser = argparse.ArgumentParser(description="Neural Control Barrier Function Experiment")
+    parser.add_argument("--system-type", type=str, default="barr1",
+                       help="Type of dynamical system (default: barr1)")
+    parser.add_argument("--train", action="store_true",
+                       help="Whether to train the CBF")
+    parser.add_argument("--verify", action="store_true", default=True,
+                       help="Whether to verify the CBF (default: True)")
+    parser.add_argument("--alpha", type=float, default=1.0,
+                       help="Alpha parameter for the CBF (default: 1.0)")
+    parser.add_argument("--region-type", type=str, default="simplicial",
+                       choices=["hyperrectangular", "simplicial"],
+                       help="Type of regions to use for verification (default: simplicial)")
+    parser.add_argument("--executor-type", type=str, default="single",
+                       choices=["single", "multi-thread", "multi-process"],
+                       help="Type of executor (default: single)")
+    parser.add_argument("--max-depth", type=int, default=None,
+                       help="Maximum depth for region splitting (None for unlimited)")
+
+    args = parser.parse_args()
+
+    # Run experiment with parsed parameters
+    main(
+        system_type=args.system_type,
+        train=args.train,
+        verify=args.verify,
+        alpha=args.alpha,
+        region_type=args.region_type,
+        executor_type=args.executor_type,
+        max_depth=args.max_depth
+    )

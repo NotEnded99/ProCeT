@@ -23,6 +23,7 @@ docker run --name lbp-neural-cbf --rm -v $(pwd)/:/lbp-neural-cbf/ -it ubuntu:lbp
 Inside the container, the initial directory is `/lbp-neural-cbf`, which contains the contents of this repository.
 
 #  python3 experiments/barrier_certificate.py
+#  python3 experiments/barrier_certificate.py --system-type barr1 --verify --max-depth 5
 
 ### Training + verification with our method
 To run the verification on a given benchmark, execute the following command: `python3 experiments/barrier_certificate.py`

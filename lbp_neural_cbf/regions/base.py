@@ -23,6 +23,7 @@ class AbstractRegion(abc.ABC):
         self,
         output_dim: int = None,
         nonlin_dependencies: List[int] = None,
+        depth: int = 0,
     ):
         # Verification-specific attributes
         self.output_dim = output_dim
@@ -30,6 +31,9 @@ class AbstractRegion(abc.ABC):
         if nonlin_dependencies is None:
             nonlin_dependencies = []
         self.nonlin_dependencies = nonlin_dependencies
+
+        # Region split depth for limiting recursion
+        self.depth = depth
 
         # Compute geometric properties (implemented by subclasses)
         self.centroid = self._compute_centroid()

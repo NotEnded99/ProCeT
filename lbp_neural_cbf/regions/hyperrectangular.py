@@ -43,6 +43,7 @@ class HyperrectangularRegion(AbstractRegion):
         radius: np.ndarray,
         output_dim: int = None,
         nonlin_dependencies: List[Tuple[int, bool]] = None,
+        depth: int = 0,
     ):
         # Store geometric parameters
         self.center_point = np.array(center)
@@ -53,7 +54,7 @@ class HyperrectangularRegion(AbstractRegion):
         self.vertices = self._compute_vertices()
 
         # Initialize unified region (this will call _compute_centroid and _compute_volume)
-        super().__init__(output_dim, nonlin_dependencies)
+        super().__init__(output_dim, nonlin_dependencies, depth)
 
     def _compute_vertices(self) -> np.ndarray:
         """Compute all vertices (corners) of the hyperrectangle."""
@@ -149,6 +150,7 @@ class HyperrectangularRegion(AbstractRegion):
                 radius=radius,
                 output_dim=self.output_dim,
                 nonlin_dependencies=self.nonlin_dependencies,
+                depth=self.depth + 1,
             )
             new_region.min_radius = self.min_radius
             new_regions.append(new_region)

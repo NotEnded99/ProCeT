@@ -98,6 +98,7 @@ class SimplicialRegion(AbstractRegion):
         output_dim: int = None,
         nonlin_dependencies: List[Tuple[int, bool]] = None,
         numeric_translator=None,
+        depth: int = 0,
     ):
         if numeric_translator is None:
             numeric_translator = NumpyTranslator()
@@ -123,7 +124,7 @@ class SimplicialRegion(AbstractRegion):
             self.min_radius = 1e-3 * max_edge_length
 
         # Initialize unified region (this will call _compute_centroid and _compute_volume)
-        super().__init__(output_dim, nonlin_dependencies)
+        super().__init__(output_dim, nonlin_dependencies, depth)
 
     def get_dimension(self) -> int:
         """Get the dimension of the simplicial region."""
@@ -346,12 +347,14 @@ class SimplicialRegion(AbstractRegion):
             vertices1,
             output_dim=self.output_dim,
             nonlin_dependencies=self.nonlin_dependencies,
+            depth=self.depth + 1,
         )
 
         region2 = SimplicialRegion(
             vertices2,
             output_dim=self.output_dim,
             nonlin_dependencies=self.nonlin_dependencies,
+            depth=self.depth + 1,
         )
 
         return region1, region2
