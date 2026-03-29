@@ -829,9 +829,9 @@ def train_cbf(
 
     # Save models
     if save_path_torch is None:
-        save_path_torch = f"data/{dynamics_model.system_name}_cbf.pth"
+        save_path_torch = f"data/mine_models_relu/{dynamics_model.system_name}_cbf.pth"
     if save_path_onnx is None:
-        save_path_onnx = f"data/{dynamics_model.system_name}_cbf.onnx"
+        save_path_onnx = f"data/mine_models_relu/{dynamics_model.system_name}_cbf.onnx"
 
     torch.save(barrier_net.state_dict(), save_path_torch)
     save_onnx_model(barrier_net, save_path_onnx, input_size)

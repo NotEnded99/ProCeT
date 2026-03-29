@@ -14,7 +14,7 @@ from lbp_neural_cbf.cbf.cbf_dynamics import Simple2DSystem, CartPoleSystem, Rend
 from lbp_neural_cbf.cbf.fossil_dynamics import Barrier1System, Barrier2System, Barrier3System, Barrier4System, HighOrd2System, HighOrd4System, HighOrd6System, HighOrd8System
 from lbp_neural_cbf.visualization.cbf_plotter import create_cbf_verification_plotter
 
-def main(system_type="barr1", train=False, verify=True, alpha=1.0, region_type="simplicial", executor_type="single", max_depth=None):
+def main(system_type="barr1", train=True, verify=False, alpha=1.0, region_type="simplicial", executor_type="single", max_depth=None):
     """
     Main script for training and verifying neural control barrier functions.
 
@@ -212,7 +212,7 @@ if __name__ == "__main__":
                        help="Type of dynamical system (default: barr1)")
     parser.add_argument("--train", action="store_true",
                        help="Whether to train the CBF")
-    parser.add_argument("--verify", action="store_true", default=True,
+    parser.add_argument("--verify", action="store_true", default=False,
                        help="Whether to verify the CBF (default: True)")
     parser.add_argument("--alpha", type=float, default=1.0,
                        help="Alpha parameter for the CBF (default: 1.0)")
@@ -222,7 +222,7 @@ if __name__ == "__main__":
     parser.add_argument("--executor-type", type=str, default="single",
                        choices=["single", "multi-thread", "multi-process"],
                        help="Type of executor (default: single)")
-    parser.add_argument("--max-depth", type=int, default=None,
+    parser.add_argument("--max-depth", type=int, default=15,
                        help="Maximum depth for region splitting (None for unlimited)")
 
     args = parser.parse_args()
