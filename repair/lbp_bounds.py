@@ -84,7 +84,8 @@ class LBPLowerBoundComputer:
             lower_bound: scalar lower bound value
         """
         # For simplicial regions, evaluate at all vertices and take minimum
-        vertices = torch.tensor(region.vertices, device=self.device, dtype=self.dtype)
+        param_dtype = next(self.model.parameters()).dtype
+        vertices = torch.tensor(region.vertices, device=self.device, dtype=param_dtype)
 
         # Evaluate network at all vertices
         with torch.no_grad():
@@ -106,7 +107,8 @@ class LBPLowerBoundComputer:
             upper_bound: scalar upper bound value
         """
         # For simplicial regions, evaluate at all vertices and take maximum
-        vertices = torch.tensor(region.vertices, device=self.device, dtype=self.dtype)
+        param_dtype = next(self.model.parameters()).dtype
+        vertices = torch.tensor(region.vertices, device=self.device, dtype=param_dtype)
 
         with torch.no_grad():
             outputs = self.model(vertices)
@@ -126,7 +128,8 @@ class LBPLowerBoundComputer:
         Returns:
             (lower_bound, upper_bound): tuple of scalars
         """
-        vertices = torch.tensor(region.vertices, device=self.device, dtype=self.dtype)
+        param_dtype = next(self.model.parameters()).dtype
+        vertices = torch.tensor(region.vertices, device=self.device, dtype=param_dtype)
 
         with torch.no_grad():
             outputs = self.model(vertices)
@@ -148,7 +151,8 @@ class LBPLowerBoundComputer:
         Returns:
             gradient: vector of size |θ| (flattened parameters)
         """
-        vertices = torch.tensor(region.vertices, device=self.device, dtype=self.dtype)
+        param_dtype = next(self.model.parameters()).dtype
+        vertices = torch.tensor(region.vertices, device=self.device, dtype=param_dtype)
         vertices.requires_grad_(False)  # Input points don't need grad
 
         # Evaluate network at all vertices
@@ -244,7 +248,7 @@ class LBPLowerBoundComputer:
                 param.data = torch.tensor(
                     param_flat.reshape(param.shape),
                     device=self.device,
-                    dtype=self.dtype
+                    dtype=param.dtype
                 )
                 idx += numel
 
@@ -274,7 +278,8 @@ def compute_lbp_bounds_for_simplex(model, simplex_vertices, device=None):
     if device is None:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    vertices = torch.tensor(simplex_vertices, device=device)
+    param_dtype = next(model.parameters()).dtype
+    vertices = torch.tensor(simplex_vertices, device=device, dtype=param_dtype)
 
     with torch.no_grad():
         outputs = model(vertices)

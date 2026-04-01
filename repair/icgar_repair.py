@@ -1,22 +1,33 @@
 #!/usr/bin/env python3
-import torch.onnx
 """
 ICGAR Repair Implementation
 """
 
 import sys
+from pathlib import Path
+cwd = str(Path.cwd())
+if cwd not in sys.path:
+    sys.path.insert(0, cwd)
 import os
 import json
-import time
-from pathlib import Path
-from typing import List, Dict, Optional
+from lbp_neural_cbf.regions.simplicial import SimplicialRegion
+def region_to_str(region):
+    return str(region)
 
+def custom_default(obj):
+    if isinstance(obj, SimplicialRegion):
+        return region_to_str(obj)
+    raise TypeError(f'Object of type {obj.__class__.__name__} is not JSON serializable')
+import time
+# from pathlib import Path
 import numpy as np
 import torch
 import torch.nn as nn
+from typing import List, Dict, Optional
+
 
 # Add parent directory to path
-sys.path.insert(0, str(Path(__file__).parent.parent))
+# sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from lbp_neural_cbf.cbf.network import BarrierNN
 from lbp_neural_cbf.cbf.fossil_dynamics import Barrier1System, Barrier2System, Barrier3System, Barrier4System
@@ -221,35 +232,29 @@ class ICGARRepair:
     def _compute_repair_gradient(self, failed_regions):
         self.model.zero_grad()
 
+        # Compute gradient of hinge loss with respect to model parameters
+        # Loss = sum over regions of max(0, -min_output)
+        # Gradient flows through the vertex with minimum output in each region
+
         for region in failed_regions:
+            param_dtype = next(self.model.parameters()).dtype
             vertices = torch.tensor(
-                region.vertices, device=self.device, dtype=self.dtype
+                region.vertices, device=self.device, dtype=param_dtype
             )
 
             outputs = self.model(vertices)
             min_idx = torch.argmin(outputs)
-            min_vertex = vertices[min_idx:min_idx+1]
+            min_vertex = vertices[min_idx:min_idx+1].clone()
 
             if outputs[min_idx] < 0:
+                # This region contributes -1 gradient through the minimizing vertex
+                min_vertex = min_vertex.to(dtype=param_dtype)
                 min_vertex.requires_grad_(True)
                 output = self.model(min_vertex)
-                output.backward()
+                # Negative sign because we minimize -h, and we want to increase h
+                (-output).backward()
 
-        if self.regularization_lambda > 0:
-            current_params = self.lbp_computer._get_flattened_params()
-            reg_gradient = 2 * self.regularization_lambda * \
-                          (current_params - self.initial_params)
-
-            idx = 0
-            for param in self.model.parameters():
-                numel = param.numel()
-                if param.grad is not None:
-                    param_grad = reg_gradient[idx:idx+numel].reshape(param.shape)
-                    param.grad.data = param.grad.data + torch.tensor(
-                        param_grad, device=self.device, dtype=self.dtype
-                    )
-                idx += numel
-
+        # Collect gradients from all parameters
         gradients = []
         for param in self.model.parameters():
             if param.grad is not None:
@@ -257,7 +262,16 @@ class ICGARRepair:
             else:
                 gradients.append(np.zeros(param.numel()))
 
-        return np.concatenate(gradients)
+        gradient = np.concatenate(gradients)
+
+        # Add L2 regularization gradient
+        if self.regularization_lambda > 0:
+            current_params = self.lbp_computer._get_flattened_params()
+            reg_gradient = 2 * self.regularization_lambda * \
+                          (current_params - self.initial_params)
+            gradient = gradient + reg_gradient
+
+        return gradient
 
     def _update_parameters(self, gradient):
         idx = 0
@@ -328,6 +342,8 @@ class ICGARRepair:
 
 
 def icgar_repair_pipeline(model_path, dynamics_model, output_dir, repair_config=None):
+    import torch
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print("=" * 70)
     print("ICGAR REPAIR PIPELINE")
     print("=" * 70)
@@ -351,11 +367,10 @@ def icgar_repair_pipeline(model_path, dynamics_model, output_dir, repair_config=
     model = BarrierNN(
         input_size=dynamics_model.input_dim,
         hidden_sizes=getattr(dynamics_model, 'hidden_sizes', [64, 64, 64]),
-        device=None
+        device=device
     )
-    model.load_state_dict(
-        torch.load(model_path, map_location='cpu', weights_only=False)
-    )
+    state_dict = torch.load(model_path, map_location='cpu', weights_only=False)
+    model.load_state_dict(state_dict)
     model.eval()
 
     print("\nRunning initial verification...")
@@ -451,7 +466,7 @@ def icgar_repair_pipeline(model_path, dynamics_model, output_dir, repair_config=
         output_dir, f"{system_name}_icgar_results.json"
     )
     with open(results_path, 'w') as f:
-        json.dump(results, f, indent=2)
+        json.dump(results, f, indent=2, default=custom_default)
 
     print(f"\nResults saved to {results_path}")
 
@@ -465,7 +480,7 @@ if __name__ == "__main__":
         description="ICGAR Repair for Neural Control Barrier Functions"
     )
     parser.add_argument(
-        "--system-type", type=str, default="barr3",
+        "--system-type", type=str, default="barr2",
         choices=["simple2d", "barr1", "barr2", "barr3", "barr4"],
         help="Type of dynamical system"
     )
