@@ -1,576 +1,629 @@
 """
-Geometry Module for CBF Verification - LBP Engine and Jacobian Computation
+修复算法的核心模块：LBP 重计算与雅可比提取
 
-This module provides core functionality for converting state space simplices
-into parameter space constraint matrices for neural CBF verification.
+实现两个核心函数：
+1. compute_simplex_bound: 重新执行 LBP 前向传播，返回标量边界
+2. compute_jacobian_matrix: 计算标量边界对网络参数的雅可比矩阵
 
-Core Functions:
-1. compute_simplex_bound: Use LBP forward propagation to compute bounds
-2. compute_jacobian_matrix: Compute Jacobian matrix of constraint constraint w.r.t. network parameters
+支持多个动力学系统（Barrier1, Barrier2, Barrier3, Barrier4 等）
+通过 dynamics_model 接口动态调用 compute_f() 方法。
 """
-# Import components from original verification code
-import sys
-from pathlib import Path
-cwd = str(Path.cwd())
-if cwd not in sys.path:
-    sys.path.insert(0, cwd)
 
-import torch
-import torch.nn.functional as F
 from typing import List, Tuple, Union
+
 import numpy as np
-from lbp_neural_cbf.linearization.linear_derivative_bounds import CrownPartialLinearization
-from lbp_neural_cbf.cbf.network import BarrierNN
-from lbp_neural_cbf.cbf.cbf_dynamics import CBFDynamicalSystem
-from lbp_neural_cbf.regions.simplicial import SimplicialRegion
-from lbp_neural_cbf.linearization.taylor import TaylorLinearization
-from lbp_neural_cbf.translators import TorchTranslator
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
 
 
-def compute_simplex_bound(model, simplex, dynamics_model, region_type='safe', device='cpu'):
+def _compute_lbp_bounds_flexible(
+    model: nn.Module,
+    x_lb: torch.Tensor,
+    x_ub: torch.Tensor,
+    translator,
+    return_all_bounds: bool = False
+) -> Tuple[torch.Tensor, torch.Tensor, List[Tuple], List[Tuple]]:
     """
-    Execute LBP forward propagation with McCormick relaxation, compute and return
-    corresponding scalar bound based on region type.
+    灵活的 LBP 前向传播，计算网络的区间界和中间层激活界。
 
     Args:
-        model: Current neural network B_theta (BarrierNN or torch.nn.Module)
-        simplex: Simplex object (SimplicialRegion)
-        dynamics_model: Dynamical system (CBFDynamicalSystem)
-        region_type: String, 'safe' or 'unsafe'
-        device: Computation device ('cpu' or 'cuda')
+        model: 神经网络
+        x_lb: 输入下界 [D]
+        x_ub: 输入上界 [D]
+        translator: TorchTranslator，用于数学运算
+        return_all_bounds: 是否返回所有层的激活界
 
     Returns:
-        bound_val: Scalar Tensor representing bound value for corresponding region
-            - For 'unsafe' region: returns upper bound of h(x) (for verifying h_max < 0)
-            - For 'safe' region: returns lower bound of CBF Lie derivative condition
-              (for verifying min_L >= 0)
-
-    Raises:
-        ValueError: If region_type is not 'safe' or 'unsafe'
+        (h_lb, h_ub, pre_act_bounds, post_act_bounds)
+        - h_lb, h_ub: 最终输出的下界和上界（标量）
+        - pre_act_bounds: 每层预激活界的列表 [(lb, ub), ...]
+        - post_act_bounds: 每层后激活界的列表 [(lb, ub), ...]
     """
-    if region_type not in ['safe', 'unsafe']:
-        raise ValueError(f"region_type must be 'safe' or 'unsafe', got '{region_type}'")
+    device = x_lb.device
+    dtype = x_lb.dtype
 
-    # Ensure model is on correct device
-    if hasattr(model, 'to'):
-        model = model.to(device)
+    # 提取网络层
+    fc_layers = []
+    activation_types = []  # 存储激活函数类型
 
-    # Set model to eval mode
-    if hasattr(model, 'eval'):
-        model.eval()
+    for module in model.modules():
+        if isinstance(module, nn.Linear):
+            fc_layers.append(module)
+        elif isinstance(module, (nn.ReLU, nn.Tanh, nn.Sigmoid)):
+            activation_types.append(type(module).__name__)
 
-    # Create Crown linearizer
-    # Note: CrownPartialLinearization requires dtype parameter
-    dtype = torch.float32
-    network_linearizer = CrownPartialLinearization(model, dtype=dtype)
+    # LBP 传播
+    current_lb = x_lb.clone()
+    current_ub = x_ub.clone()
 
-    # Move model to specified device (if needed)
-    network_linearizer.device = torch.device(device)
+    pre_act_bounds = []
+    post_act_bounds = []
 
-    # Compute LBP forward propagation
-    # Note: compute_network_bounds needs a batch as a list
-    network_linearizer.compute_network_bounds([simplex])
+    for i, layer in enumerate(fc_layers):
+        W, b = layer.weight, layer.bias
 
-    # Get network output bounds h(x)
-    h_min, h_max = network_linearizer.get_network_output_bounds(sample_idx=0)
+        # 线性变换界的 LBP
+        W_pos = F.relu(W)
+        W_neg = W - W_pos
 
+        y_lb = (W_pos @ current_lb) + (W_neg @ current_ub) + b
+        y_ub = (W_pos @ current_ub) + (W_neg @ current_lb) + b
+
+        pre_act_bounds.append((y_lb.clone(), y_ub.clone()))
+
+        if i < len(fc_layers) - 1:  # 不是最后一层，应用激活
+            # 获取激活类型
+            act_type = activation_types[i] if i < len(activation_types) else 'ReLU'
+
+            if act_type == 'Tanh':
+                # Tanh 是单调递增的，且值域在 [-1, 1]
+                z_lb = torch.tanh(y_lb)
+                z_ub = torch.tanh(y_ub)
+            elif act_type == 'Sigmoid':
+                # Sigmoid 是单调递增的，值域在 [0, 1]
+                z_lb = torch.sigmoid(y_lb)
+                z_ub = torch.sigmoid(y_ub)
+            else:  # ReLU
+                inactive_mask = y_ub <= 0
+                active_mask = y_lb >= 0
+                unstable_mask = ~active_mask & ~inactive_mask
+
+                z_lb = torch.where(inactive_mask, torch.zeros_like(y_lb), y_lb)
+
+                denom = torch.clamp(y_ub - y_lb, min=1e-12)
+                clip_upper = y_ub * y_lb / denom
+                z_ub = torch.where(unstable_mask, clip_upper, y_ub)
+
+            current_lb = z_lb
+            current_ub = z_ub
+            post_act_bounds.append((current_lb.clone(), current_ub.clone()))
+        else:
+            # 最后一层，没有激活函数
+            post_act_bounds.append((y_lb.clone(), y_ub.clone()))
+
+    h_lb = current_lb.squeeze()
+    h_ub = current_ub.squeeze()
+
+    # 确保输出是标量（如果输出维度大于1，取第一个元素作为标量）
+    if h_lb.dim() > 0:
+        h_lb = h_lb[0]
+    if h_ub.dim() > 0:
+        h_ub = h_ub[0]
+
+    return h_lb, h_ub, pre_act_bounds, post_act_bounds
+
+
+def _compute_jacobian_bounds(
+    fc_layers: List[nn.Linear],
+    pre_act_bounds: List[Tuple[torch.Tensor, torch.Tensor]],
+    activation_types: List[str],
+    output_is_scalar: bool = True
+) -> Tuple[torch.Tensor, torch.Tensor]:
+    """
+    计算输出对输入的 Jacobian 界（反向传播版本）。
+
+    使用 CROWN 线性界传播的反向形式计算 Jacobian 界。
+    目标：计算 ∂h/∂x 的界，其中 h 是标量输出。
+
+    Args:
+        fc_layers: 全连接层列表
+        pre_act_bounds: 预激活界列表
+        activation_types: 激活函数类型列表
+        output_is_scalar: 输出是否是标量
+
+    Returns:
+        (J_lb, J_ub): Jacobian 的下界和上界，形状 [input_dim]
+        对于标量输出，返回一维向量 [input_dim]
+    """
+    num_layers = len(fc_layers)
+
+    if num_layers == 0:
+        return None, None
+
+    input_dim = fc_layers[0].in_features
+
+    if output_is_scalar:
+        # 标量输出的 Jacobian 界
+        # 使用反向传播形式计算 dL/dx
+        # 最后一层：∂h/∂y = 1（因为输出已经是标量）
+        # dL/d(pre_act_L) = 1 * W^L（输出对 pre-activation 的导数）
+
+        # 最后一层的梯度：W^L 是 [1, dim_{L-1}]
+        W_L = fc_layers[-1].weight  # [1, dim_{L-1}]
+        grad = W_L[0, :]  # [dim_{L-1}]，取第一行
+
+        for i in range(num_layers - 2, -1, -1):
+            W = fc_layers[i].weight  # [out_dim, in_dim]
+
+            # 反向传播梯度：grad = W^T @ grad
+            grad = W.T @ grad  # [in_dim]
+
+            # 获取激活函数导数的界（来自下一层，即索引 i）
+            if i > 0:
+                act_lb, act_ub = pre_act_bounds[i - 1]  # 第 i 层的 pre-activation 界
+                act_type = activation_types[i - 1] if i - 1 < len(activation_types) else 'ReLU'
+
+                # 计算激活函数导数的界
+                if act_type == 'Tanh':
+                    S_L = torch.zeros_like(act_lb)
+                    S_U = torch.ones_like(act_lb)
+                elif act_type == 'Sigmoid':
+                    sigma_lb = torch.sigmoid(act_lb)
+                    sigma_ub = torch.sigmoid(act_ub)
+                    S_L = sigma_lb * (1 - sigma_ub)
+                    S_U = sigma_ub * (1 - sigma_lb)
+                else:  # ReLU
+                    S_L = torch.zeros_like(act_lb)
+                    S_U = torch.ones_like(act_lb)
+
+                # 乘以激活函数导数的界（使用中间值）
+                grad = grad * ((S_L + S_U) / 2)
+
+        # grad 现在是 [input_dim] 形状的 dL/dx
+        # 使用绝对值作为界（保守处理）
+        J_lb = grad.abs()
+        J_ub = grad.abs()
+
+        return J_lb, J_ub
+
+    else:
+        # 多输出情况（不常用，暂不实现）
+        raise NotImplementedError("Multi-output Jacobian bounds not implemented yet")
+
+
+def _compute_dynamics_bounds_torch(
+    dynamics_model,
+    x_lb: torch.Tensor,
+    x_ub: torch.Tensor,
+    translator
+) -> Tuple[torch.Tensor, torch.Tensor]:
+    """
+    使用 TorchTranslator 计算动力学的界。
+
+    Args:
+        dynamics_model: 动力学系统对象（有 compute_f 方法）
+        x_lb: 状态下界 [D]
+        x_ub: 状态上界 [D]
+        translator: TorchTranslator
+
+    Returns:
+        (f_lb, f_ub): 动力学函数 f(x) 的下界和上界，形状 [D]
+    """
+    device = x_lb.device
+    dtype = x_lb.dtype
+    D = x_lb.shape[-1]
+
+    # 计算区间内所有顶点的 f(x) 值
+    # 对于 D 维空间，我们需要评估 2^D 个角点
+    corner_points = []
+    for binary in range(1 << D):
+        corner = torch.zeros(D, dtype=dtype, device=device)
+        for d in range(D):
+            if (binary >> d) & 1:
+                corner[d] = x_ub[d]
+            else:
+                corner[d] = x_lb[d]
+        corner_points.append(corner)
+
+    corner_points = torch.stack(corner_points, dim=0)  # [2^D, D]
+
+    # 计算每个角点的 f(x)
+    f_values = dynamics_model.compute_f(corner_points, translator)  # [2^D, D]
+
+    # 取每个维度的最小值和最大值作为界
+    f_lb = torch.min(f_values, dim=0).values
+    f_ub = torch.max(f_values, dim=0).values
+
+    return f_lb, f_ub
+
+
+def _compute_mccormick_product_lower_bound(
+    J_lb: torch.Tensor,
+    J_ub: torch.Tensor,
+    f_lb: torch.Tensor,
+    f_ub: torch.Tensor
+) -> torch.Tensor:
+    """
+    计算 J * f 的下界（McCormick 乘积松弛）。
+
+    对于每个维度 i,j：J[i,j] * f[j] 的下界
+    然后对所有 j 求和得到标量
+
+    Args:
+        J_lb, J_ub: Jacobian 界，形状 [D, D]
+        f_lb, f_ub: f(x) 界，形状 [D]
+
+    Returns:
+        J * f 的下界（标量）
+    """
+    # J * f 是矩阵-向量乘积，结果是向量 [D]
+    # 然后我们对向量元素求和得到标量
+
+    # 计算每个 J[i,j] * f[j] 的界
+    # 下界 = min(4 个角点乘积)
+    product_min = torch.zeros_like(J_lb)  # [D, D]
+
+    corners = [
+        (J_lb, f_lb),  # a_L * b_L
+        (J_lb, f_ub),  # a_L * b_U
+        (J_ub, f_lb),  # a_U * b_L
+        (J_ub, f_ub),  # a_U * b_U
+    ]
+
+    for J_mat, f_vec in corners:
+        product_min = product_min + J_mat * f_vec
+
+    # J * f 的下界：对 J 的每个行向量与 f 的乘积极小化
+    # 实际上这是 element-wise 的最小值
+    product_lower = torch.minimum(
+        torch.minimum(J_lb * f_lb, J_lb * f_ub),
+        torch.minimum(J_ub * f_lb, J_ub * f_ub)
+    )  # [D]
+
+    # 求和得到标量
+    min_L = torch.sum(product_lower)
+
+    return min_L
+
+
+def compute_simplex_bound(
+    model: nn.Module,
+    simplex_vertices: Union[torch.Tensor, np.ndarray],
+    region_type: str,
+    dynamics_model=None,
+    translator=None
+) -> torch.Tensor:
+    """
+    对传入的单纯形顶点重新执行 LBP 前向传播，返回对应的标量边界。
+
+    Args:
+        model: 神经网络（BarrierNN 或 nn.Sequential）
+        simplex_vertices: 单纯形的顶点，形状 [V, D]，其中 V = D+1
+        region_type: 'unsafe' 或 'safe'
+            - 'unsafe': 返回网络输出的上界 h_max（验证条件 h_max < 0）
+            - 'safe': 返回 CBF Lie 导数条件的下界 min_L（验证条件 min_L >= 0）
+        dynamics_model: 动力学系统（safe 区域需要，支持多个系统）
+        translator: TorchTranslator（safe 区域需要）
+
+    Returns:
+        标量边界值，保留计算图用于反向传播
+
+    避坑：
+        - 必须保证 requires_grad=True
+        - 严禁使用 with torch.no_grad()
+        - 严禁任何 In-place 操作
+    """
+    device = next(model.parameters()).device
+    dtype = next(model.parameters()).dtype
+
+    # 转换顶点为 Tensor，确保保留计算图
+    if isinstance(simplex_vertices, np.ndarray):
+        vertices = torch.tensor(simplex_vertices, dtype=dtype, device=device)
+    else:
+        vertices = simplex_vertices.to(dtype=dtype, device=device)
+
+    # 确保 vertices 保留梯度（虽然它不参与反向传播，但必须保持计算图连通性）
+    vertices = vertices.clone().requires_grad_(True)
+
+    V, D = vertices.shape
+    if V != D + 1:
+        raise ValueError(f"Simplex vertices must have V=D+1 vertices, got V={V}, D={D}")
+
+    # ========== 计算输入区间 ==========
+    x_lb = vertices.min(dim=0).values
+    x_ub = vertices.max(dim=0).values
+
+    # ========== LBP 前向传播（获取 h_max 或 h_min） ==========
+    h_lb, h_ub, pre_act_bounds, post_act_bounds = _compute_lbp_bounds_flexible(
+        model, x_lb, x_ub, translator
+    )
+
+    # ========== 根据区域类型返回对应边界 ==========
     if region_type == 'unsafe':
-        """
-        Unsafe region verification condition: h_max < 0
-
-        For truly unsafe regions (obstacle interior), we need to verify:
-        h(x) is negative over entire region, i.e., upper bound is less than zero
-        """
-        # Return upper bound (we need h_max < 0 to satisfy condition)
-        bound_val = torch.tensor(h_max, device=device, dtype=dtype, requires_grad=False)
+        # 返回 h_max（验证条件需要 h_max < 0）
+        # 确保是标量
+        return h_ub.reshape(-1)
 
     elif region_type == 'safe':
-        """
-        Safe region verification condition: Lower bound of Lie derivative forward invariance condition >= 0
+        # 返回 CBF Lie 导数条件的下界 min_L
+        # 验证条件：∇h(x) · f(x) + α(h(x)) >= 0
 
-        CBF condition: min_L >= 0
-        where min_L is the lower bound of L_f h + sup_u L_g h * u + alpha(h)
-        """
-        # Compute Jacobian bounds (for computing Lie derivative)
-        network_linearizer.compute_partial_derivative_bounds(input_idx=None, output_idx=0)
+        if dynamics_model is None or translator is None:
+            raise ValueError("dynamics_model and translator are required for 'safe' region type")
 
-        # Get Jacobian bounds J(x) = ∇h/∂x
-        A_L, b_L, A_U, b_U = network_linearizer.get_partial_derivative_bounds()
+        # ========== 提取网络层和激活类型 ==========
+        fc_layers = []
+        activation_types = []
 
-        # Convert to format needed by CBF verification code
-        J_affine_L = (A_L, b_L)
-        J_affine_U = (A_U, b_U)
+        for module in model.modules():
+            if isinstance(module, nn.Linear):
+                fc_layers.append(module)
+            elif isinstance(module, (nn.ReLU, nn.Tanh, nn.Sigmoid)):
+                activation_types.append(type(module).__name__)
 
-        # Get network linear bounds h(x)
-        (h_A_L, h_a_L), (h_A_U, h_a_U) = network_linearizer.get_network_linear_bounds()
-
-        # Compute dynamics bounds (using Taylor expansion)
-        # Note: _compute_dynamics_bounds_taylor needs batch
-        translator = TorchTranslator(device=torch.device(device))
-        taylor_linearizer = TaylorLinearization(dynamics_model, numeric_translator=translator)
-
-        # Compute drift term f(x) bounds
-        f_linearization = taylor_linearizer.linearize_sample(simplex)
-        (f_A_L, f_b_L), (f_A_U, f_b_U), _ = f_linearization.first_order_model
-        f_affine_L = (f_A_L, f_b_L)
-        f_affine_U = (f_A_U, f_b_U)
-
-        # Compute McCormick product lower bound for drift term
-        # Term: J(x) · f(x)
-        eta_drift = 0.5
-        drift_L = _compute_mccormick_product_lower_bound(
-            J_affine_L, J_affine_U, f_affine_L, f_affine_U,
-            simplex, eta=eta_drift, device=device, dtype=dtype
+        # ========== 计算 Jacobian 界 ==========
+        J_lb, J_ub = _compute_jacobian_bounds(
+            fc_layers, pre_act_bounds, activation_types, output_is_scalar=True
         )
+        # J_lb, J_ub: [D, D] - 输出对每个输入维度的偏导数界
 
-        # Sum over state dimensions
-        drift_L_sum = drift_L.sum() if hasattr(drift_L, 'sum') else torch.tensor(drift_L.sum(), device=device, dtype=dtype)
+        # ========== 计算动力学界 ==========
+        f_lb, f_ub = _compute_dynamics_bounds_torch(
+            dynamics_model, x_lb, x_ub, translator
+        )
+        # f_lb, f_ub: [D]
 
-        # Compute class-K term bound: alpha(h(x))
-        # Use lower bound of h to compute lower bound of alpha(h)
-        alpha_A_L = dynamics_model.alpha_function(h_A_L[..., 0, :])
-        alpha_a_L = dynamics_model.alpha_function(h_a_L[..., 0])
+        # ========== 计算 ∇h · f 的下界 ==========
+        # 使用 McCormick 乘积松弛
+        dh_df_L = _compute_mccormick_product_lower_bound(J_lb, J_ub, f_lb, f_ub)
 
-        alpha_L_bound = alpha_A_L.sum() if hasattr(alpha_A_L, 'sum') else torch.tensor(alpha_A_L.sum(), device=device, dtype=dtype)
-        alpha_a_L_bound = alpha_a_L if isinstance(alpha_a_L, torch.Tensor) else torch.tensor(alpha_a_L, device=device, dtype=dtype)
+        # ========== 计算 α(h) 项 ==========
+        # CBF 条件：∇h · f + α(h) >= 0
+        # α(h) = α * h(x)，其中 α > 0 是 class-K 函数
+        alpha = dynamics_model.alpha if hasattr(dynamics_model, 'alpha') else 1.0
 
-        alpha_L_total = alpha_L_bound + alpha_a_L_bound
+        # h 的界（保守使用下界）
+        h_L = h_lb  # h 的下界
 
-        # Handle control term (if any)
-        n = dynamics_model.input_dim
-        m = dynamics_model.control_dim
+        alpha_h_L = alpha * h_L
 
-        control_L_sum = torch.tensor(0.0, device=device, dtype=dtype)
+        # ========== CBF 条件下界 ==========
+        # min_L = ∇h · f 的下界 + α(h) 的下界
+        # 注意：α 是正数，所以 α * h 的下界是 α * h_lb
+        min_L = dh_df_L + alpha_h_L
 
-        if m > 0:
-            # Compute control term g(x) bounds
-            class GDynamics:
-                def __init__(self, original_dynamics):
-                    self.original_dynamics = original_dynamics
-                    self.input_dim = original_dynamics.input_dim
-                def compute_dynamics(self, x, translator):
-                    return self.original_dynamics.compute_g(x, translator)
+        # 确保是标量并保留梯度
+        return min_L.reshape(-1)
 
-            g_dynamics = GDynamics(dynamics_model)
-            g_linearizer = TaylorLinearization(g_dynamics, numeric_translator=translator)
-            g_linearization = g_linearizer.linearize_sample(simplex)
-            (g_A_L, g_b_L), (g_A_U, g_b_U), _ = g_linearization.first_order_model
-            g_affine_L = (g_A_L, g_b_L)
-            g_affine_U = (g_A_U, g_b_U)
-
-            # Compute McCormick product lower bound for control term
-            # Term: v(x) = J(x) · g(x)
-            eta_control = 0.5
-            v_L = _compute_mccormick_product_lower_bound(
-                J_affine_L, J_affine_U, g_affine_L, g_affine_U,
-                simplex, eta=eta_control, device=device, dtype=dtype
-            )
-
-            # Lower and upper bounds of v(x)
-            v_L_min = _get_affine_function_bounds((v_L[0], v_L[1]), simplex, device=device, dtype=dtype)[0]
-            v_L_max = _get_affine_function_bounds((v_L[0], v_L[1]), simplex, device=device, dtype=dtype)[1]
-
-            # Compute sup_u v(x) · u
-            u_min = torch.tensor(dynamics_model.u_min, device=device, dtype=dtype)
-            u_max = torch.tensor(dynamics_model.u_max, device=device, dtype=dtype)
-
-            # For each control dimension, find optimal u
-            v_L_pos = torch.where(v_L_min >= 0, v_L_max, v_L_min)
-            v_L_neg = torch.where(v_L_max <= 0, v_L_min, v_L_max)
-
-            # Positive terms use u_max, negative terms use u_min
-            control_L_sum = (v_L_pos * u_max).sum() + (v_L_neg * u_min).sum()
-
-        # Final CBF condition lower bound: min_L = drift + control + alpha(h)
-        min_L = drift_L_sum + control_L_sum + alpha_L_total
-
-        bound_val = min_L.detach()  # Detach from computation graph
-
-    return bound_val
+    else:
+        raise ValueError(f"Invalid region_type: {region_type}. Must be 'unsafe' or 'safe'")
 
 
-def compute_jacobian_matrix(model, V_safe, V_unsafe, dynamics_model, device='cpu'):
+def _extract_layer_params(model: nn.Module) -> Tuple[List[nn.Linear], List[str], dict]:
     """
-    Compute Jacobian matrix J of all verified region constraint bounds w.r.t. network parameters theta.
-
-    Args:
-        model: Neural network (BarrierNN or torch.nn.Module)
-        V_safe: Set of safe simplices (goal is to ensure Lie derivative lower bound >= 0)
-        V_unsafe: Set of obstacle simplices (goal is to ensure network output upper bound < 0)
-        dynamics_model: Dynamical system (used for safe region CBF condition computation)
-        device: Computation device ('cpu' or 'cuda')
+    从模型中提取层参数和命名信息。
 
     Returns:
-        J: 2D Tensor of shape (m, |theta|)
-           where m = |V_safe| + |V_unsafe|
-           |theta| is the total number of network parameters
-
-    Raises:
-        ValueError: If model has no parameters
+        (fc_layers, activation_types, param_dict)
     """
-    # Ensure model is on correct device
-    if hasattr(model, 'to'):
-        model = model.to(device)
+    fc_layers = []
+    activation_types = []
+    param_dict = {}
 
-    # Set model to eval mode
-    if hasattr(model, 'eval'):
-        model.eval()
+    for name, param in model.named_parameters():
+        param_dict[name] = param
 
-    # Get all network parameters (in order)
-    params_dict = dict(model.named_parameters())
-    param_names = list(params_dict.keys())
-    total_params = sum(p.numel() for p in params_dict.values())
+    for module in model.modules():
+        if isinstance(module, nn.Linear):
+            fc_layers.append(module)
+        elif isinstance(module, (nn.ReLU, nn.Tanh, nn.Sigmoid)):
+            activation_types.append(type(module).__name__)
 
-    if total_params == 0:
-        raise ValueError("Model has no parameters")
+    return fc_layers, activation_types, param_dict
 
-    # Create wrapper function for computing constraint bound for single simplex
-    def _compute_constraint_for_simplex(simplex, region='safe'):
-        """
-        Compute constraint bound value for single simplex
 
-        Args:
-            simplex: Simplex object
-            region: 'safe' or 'unsafe'
+def _forward_pass_simple(
+    model: nn.Module,
+    x_lb: torch.Tensor,
+    x_ub: torch.Tensor
+) -> Tuple[torch.Tensor, torch.Tensor]:
+    """
+    简单的 LBP 前向传播（不带中间界返回）。
 
-        Returns:
-            constraint_value: Scalar Tensor
-        """
-        with torch.enable_grad():  # Ensure gradient is available
-            return compute_simplex_bound(model, simplex, dynamics_model, region_type=region, device=device)
+    Returns:
+        (h_lb, h_ub): 输出的下界和上界
+    """
+    # 提取层信息
+    fc_layers = []
+    activation_types = []
 
-    # Prepare all simplices
-    all_regions = [(simplex, 'safe') for simplex in V_safe] + [(simplex, 'unsafe') for simplex in V_unsafe]
-    m = len(all_regions)
+    for module in model.modules():
+        if isinstance(module, nn.Linear):
+            fc_layers.append(module)
+        elif isinstance(module, (nn.ReLU, nn.Tanh, nn.Sigmoid)):
+            activation_types.append(type(module).__name__)
 
-    # Method 1: Use torch.func.jacrev to compute Jacobian row by row
-    # Note: torch.func.jacrev requires PyTorch 2.0+
-    # We create a functional API to compute all constraints at once
+    current_lb = x_lb.clone()
+    current_ub = x_ub.clone()
 
-    # Define functional call
-    def _constraint_function(params_flat, simplexes_data, region_types_data, model_arch, dynamics):
-        """
-        Functional constraint computation for Jacobian computation
+    for i, layer in enumerate(fc_layers):
+        W = layer.weight
+        b = layer.bias
 
-        Args:
-            params_flat: Flattened parameter vector
-            simplexes_data: Simplex vertices data
-            region_types_data: Region type markers
-            model_arch: Model architecture information
-            dynamics: Dynamical system
+        W_pos = F.relu(W)
+        W_neg = W - W_pos
 
-        Returns:
-            constraints: Constraint value vector
-        """
-        # Load parameters into temporary model
-        idx = 0
-        for name, param in model.named_parameters():
-            numel = param.numel()
-            param.data.copy_(params_flat[idx:idx+numel].reshape(param.shape))
-            idx += numel
+        y_lb = (W_pos @ current_lb) + (W_neg @ current_ub) + b
+        y_ub = (W_pos @ current_ub) + (W_neg @ current_lb) + b
 
-        # Compute each constraint
-        constraints = []
-        for simplex_data, region_type in zip(simplexes_data, region_types_data):
-            # Reconstruct simplex object from data
-            vertices = simplex_data.numpy() if hasattr(simplex_data, 'numpy') else simplex_data
-            simplex = SimplicialRegion(vertices)
+        if i < len(fc_layers) - 1:
+            act_type = activation_types[i] if i < len(activation_types) else 'ReLU'
 
-            # Compute constraint
-            constraint = compute_simplex_bound(model_arch, simplex, dynamics, region_type=region, device=device)
-            constraints.append(constraint)
+            if act_type == 'Tanh':
+                z_lb = torch.tanh(y_lb)
+                z_ub = torch.tanh(y_ub)
+            elif act_type == 'Sigmoid':
+                z_lb = torch.sigmoid(y_lb)
+                z_ub = torch.sigmoid(y_ub)
+            else:  # ReLU
+                inactive_mask = y_ub <= 0
+                active_mask = y_lb >= 0
+                unstable_mask = ~active_mask & ~inactive_mask
 
-        return torch.stack(constraints)
+                z_lb = torch.where(inactive_mask, torch.zeros_like(y_lb), y_lb)
 
-    # Prepare data
-    simplexes_data = [torch.tensor(simplex.vertices, device=device, dtype=torch.float32) for simplex, _ in all_regions]
-    region_types_data = [region_type for _, region_type in all_regions]
+                denom = torch.clamp(y_ub - y_lb, min=1e-12)
+                clip_upper = y_ub * y_lb / denom
+                z_ub = torch.where(unstable_mask, clip_upper, y_ub)
 
-    # Get model initial parameters
-    initial_params = torch.cat([p.flatten() for p in model.parameters()])
-
-    # Create functional model call
-    try:
-        # Use functorch or torch.func
-        if hasattr(torch, 'func') and hasattr(torch.func, 'jacrev'):
-            # PyTorch 2.0+
-            constraint_func = lambda params: _constraint_function(
-                params, simplexes_data, region_types_data, model, dynamics_model
-            )
-
-            # Compute Jacobian matrix
-            J = torch.func.jacrev(constraint_func)(initial_params)
-
+            current_lb = z_lb
+            current_ub = z_ub
         else:
-            # Fallback method: use autograd row by row
-            J_rows = []
+            current_lb = y_lb
+            current_ub = y_ub
 
-            for simplex, region_type in all_regions:
-                # Clear gradients
-                for param in model.parameters():
-                    if param.grad is not None:
-                        param.grad = torch.zeros_like(param)
-                    else:
-                        param.grad.zero_()
+    return current_lb.squeeze(), current_ub.squeeze()
 
-                # Compute constraint and backpropagate
-                constraint = compute_simplex_bound(model, simplex, dynamics_model, region_type=region, device=device)
 
-                # Backpropagate
-                constraint.backward()
+def compute_jacobian_matrix(
+    model: nn.Module,
+    V_safe: List[Union[torch.Tensor, np.ndarray]],
+    V_unsafe: List[Union[torch.Tensor, np.ndarray]],
+    dynamics_model=None,
+    translator=None
+) -> torch.Tensor:
+    """
+    计算 V_safe 和 V_unsafe 中所有单纯形的标量边界对网络参数的雅可比矩阵。
 
-                # Collect gradient
-                grad_vec = torch.cat([p.grad.flatten() for p in model.parameters()])
-                J_rows.append(grad_vec)
+    使用 torch.autograd.grad 计算雅可比矩阵，
+    确保每次计算独立，不累加梯度。
 
-            J = torch.stack(J_rows)
+    Args:
+        model: 神经网络（BarrierNN 或 nn.Sequential）
+        V_safe: 安全区中验证通过的单纯形顶点列表
+        V_unsafe: 障碍区中验证通过的单纯形顶点列表
+        dynamics_model: 动力学系统（safe 区域需要，支持多个系统）
+        translator: TorchTranslator（safe 区域需要）
 
-    except Exception as e:
-        # If jacrev is not available, use numerical differentiation
-        print(f"Warning: jacrev not available, using numerical differentiation. Error: {e}")
-        J = _compute_jacobian_numerical(model, all_regions, dynamics_model, device=device, eps=1e-5)
+    Returns:
+        雅可比矩阵 J，形状 [N, P]，其中 N 是单纯形总数，P 是网络参数总数
+        J[i, j] = ∂bound_i / ∂θ_j
+    """
+    device = next(model.parameters()).device
+    dtype = next(model.parameters()).dtype
+
+    # 准备所有单纯形和对应的区域类型
+    all_vertices = []
+    all_region_types = []
+
+    for v in V_safe:
+        if isinstance(v, np.ndarray):
+            v = torch.tensor(v, dtype=dtype, device=device)
+        else:
+            v = v.to(dtype=dtype, device=device)
+        all_vertices.append(v)
+        all_region_types.append('safe')
+
+    for v in V_unsafe:
+        if isinstance(v, np.ndarray):
+            v = torch.tensor(v, dtype=dtype, device=device)
+        else:
+            v = v.to(dtype=dtype, device=device)
+        all_vertices.append(v)
+        all_region_types.append('unsafe')
+
+    N = len(all_vertices)
+
+    if N == 0:
+        num_params = sum(p.numel() for p in model.parameters())
+        return torch.zeros(0, num_params, dtype=dtype, device=device)
+
+    num_params = sum(p.numel() for p in model.parameters())
+    all_grads = []
+
+    for i, (vertices, region_type) in enumerate(zip(all_vertices, all_region_types)):
+        vertices = vertices.clone().requires_grad_(True)
+
+        # 计算输入界
+        x_lb = vertices.min(dim=0).values
+        x_ub = vertices.max(dim=0).values
+
+        # 前向传播
+        h_lb, h_ub = _forward_pass_simple(model, x_lb, x_ub)
+
+        # 选择输出
+        if region_type == 'unsafe':
+            output = h_ub
+        else:
+            output = h_lb
+
+        # 计算对所有参数的梯度
+        grad_list = []
+        params_for_grad = list(model.parameters())
+
+        # 使用 autograd.grad 单独计算每个参数的梯度
+        for param in params_for_grad:
+            grad = torch.autograd.grad(
+                outputs=output,
+                inputs=param,
+                retain_graph=True,
+                allow_unused=True
+            )[0]
+            if grad is not None:
+                grad_list.append(grad.flatten())
+            else:
+                grad_list.append(torch.zeros(param.numel(), dtype=dtype, device=device))
+
+        grad_vector = torch.cat(grad_list)
+        all_grads.append(grad_vector)
+
+    # Stack 成矩阵
+    J = torch.stack(all_grads, dim=0)  # [N, num_params]
 
     return J
 
 
-def _compute_mccormick_product_lower_bound(affine1_L, affine1_U, affine2_L, affine2_U, simplex, eta=0.5, device='cpu', dtype=torch.float32):
+def compute_gradient_norms(
+    model: nn.Module,
+    V_safe: List[Union[torch.Tensor, np.ndarray]],
+    V_unsafe: List[Union[torch.Tensor, np.ndarray]],
+    dynamics_model=None,
+    translator=None
+) -> Tuple[torch.Tensor, torch.Tensor]:
     """
-    Compute McCormick lower bound for product: (affine1) · (affine2)
+    计算每个单纯形的边界值对参数的梯度范数。
+
+    用于分析修复方向的重要性和敏感性。
 
     Args:
-        affine1_L, affine1_U: First affine function's (A, b) lower and upper bounds
-        affine2_L, affine2_U: Second affine function's (A, b) lower and upper bounds
-        simplex: Simplex object
-        eta: McCormick relaxation parameter (0 to 1)
-        device: Computation device
-        dtype: Data type
+        model: 神经网络
+        V_safe: 安全区单纯形列表
+        V_unsafe: 障碍区单纯形列表
+        dynamics_model: 动力学系统
+        translator: TorchTranslator
 
     Returns:
-        (M, c): Lower bound affine function's coefficient and constant
+        (safe_grad_norms, unsafe_grad_norms): 安全区和障碍区的梯度范数
     """
-    # Get interval bounds
-    y1_min, y1_max = _get_affine_function_bounds(affine1_L, simplex, affine1_U, device=device, dtype=dtype)
-    y2_min, y2_max = _get_affine_function_bounds(affine2_L, simplex, affine2_U, device=device, dtype=dtype)
+    J = compute_jacobian_matrix(
+        model, V_safe, V_unsafe, dynamics_model, translator
+    )
 
-    (A1_L, b1_L), (A1_U, b1_U) = affine1_L, affine1_U
-    (A2_L, b2_L), (A2_U, b2_U) = affine2_L, affine2_U
+    # 计算每行的 L2 范数
+    grad_norms = torch.norm(J, dim=1)  # [N]
 
-    # McCormick lower bound formula
-    C1 = eta * y1_min + (1 - eta) * y1_max
-    C2 = eta * y2_min + (1 - eta) * y2_max
-    const_part = -(eta * y1_min * y2_min + (1 - eta) * y1_max * y2_max)
+    n_safe = len(V_safe)
+    n_unsafe = len(V_unsafe)
 
-    C1_pos = torch.clamp(C1, min=0)
-    C1_neg = C1 - C1_pos
-    C2_pos = torch.clamp(C2, min=0)
-    C2_neg = C2 - C2_pos
-
-    # Lower bound affine coefficient
-    M = C1_pos.unsqueeze(-1) * A2_L + C1_neg.unsqueeze(-1) * A2_U + C2_pos.unsqueeze(-1) * A1_L + C2_neg.unsqueeze(-1) * A1_U
-    c = C1_pos * b2_L + C1_neg * b2_U + C2_pos * b1_L + C2_neg * b1_U + const_part
-
-    return M, c
-
-
-def _get_affine_function_bounds(affine_L, simplex, affine_U=None, device='cpu', dtype=torch.float32):
-    """
-    Compute min/max of affine function over simplex
-
-    Args:
-        affine_L: Lower bound (A, b)
-        simplex: Simplex object
-        affine_U: Upper bound (A, b), if None then use affine_L
-        device: Computation device
-        dtype: Data type
-
-    Returns:
-        (lower, upper): Minimum and maximum values
-    """
-    (A, b) = affine_L
-
-    # For simplex, evaluate at all vertices to find min/max
-    vertices = torch.tensor(simplex.vertices, device=device, dtype=dtype)
-
-    # Evaluate lower bound function at all vertices
-    values_L = torch.matmul(vertices, A) + b
-    lower = torch.min(values_L)
-
-    if affine_U is None:
-        upper = torch.max(values_L)
+    if n_safe > 0 and n_unsafe > 0:
+        safe_grad_norms = grad_norms[:n_safe]
+        unsafe_grad_norms = grad_norms[n_safe:]
+    elif n_safe > 0:
+        safe_grad_norms = grad_norms
+        unsafe_grad_norms = torch.tensor([], device=grad_norms.device)
     else:
-        (A_U, b_U) = affine_U
-        values_U = torch.matmul(vertices, A_U) + b_U
-        upper = torch.max(values_U)
+        safe_grad_norms = torch.tensor([], device=grad_norms.device)
+        unsafe_grad_norms = grad_norms
 
-    return lower, upper
-
-
-def _compute_jacobian_numerical(model, regions_with_types, dynamics_model, device='cpu', eps=1e-5):
-    """
-    Compute Jacobian matrix using numerical finite difference (fallback method)
-
-    Args:
-        model: Neural network
-        regions_with_types: List of (rarex, region_type) tuples
-        dynamics_model: Dynamical system
-        device: Computation device
-        eps: Numerical difference step size
-
-    Returns:
-        J: Jacobian matrix (m, |theta|)
-    """
-    # Get total parameters count
-    total_params = sum(p.numel() for p in model.parameters())
-
-    # Save current parameters
-    original_params = [p.data.clone() for p in model.parameters()]
-
-    # Compute all constraints under current parameters
-    def _compute_all_constraints(params):
-        idx = 0
-        for param, original in zip(model.parameters(), original_params):
-            param.data.copy_(params[idx:idx+param.numel()].reshape(param.shape))
-            idx += param.numel()
-
-        values = []
-        for simplex, region_type in regions_with_types:
-            val = compute_simplex_bound(model, simplex, dynamics_model, region_type=region, device=device)
-            values.append(val.item())
-        return torch.tensor(values, device=device, dtype=torch.float32)
-
-    J_rows = torch.zeros(len(regions_with_types), total_params, device=device, dtype=torch.float32)
-
-    # Compute finite difference for each parameter
-    current_values = _compute_all_constraints(torch.cat([p.flatten() for p in model.parameters()]))
-
-    for param_idx in range(total_params):
-        # Create perturbation
-        params_perturbed = torch.cat([p.flatten() for p in model.parameters()]).clone()
-        params_perturbed[param_idx] += eps
-
-        # Compute constraint values after perturbation
-        perturbed_values = _compute_all_constraints(params_perturbed)
-
-        # Numerical gradient
-        J_rows[:, param_idx] = (perturbed_values - current_values) / eps
-
-    # Restore original parameters
-    for param, original in zip(model.parameters(), original_params):
-        param.data.copy_(original)
-
-    return J_rows
-
-
-def test_geometry_module():
-    """
-    Test geometry module functionality
-
-    Returns:
-        dict: Test results
-    """
-    import sys
-    from pathlib import Path
-    cwd = str(Path.cwd())
-    if cwd not in sys.path:
-        sys.path.insert(0, cwd)
-
-    from lbp_neural_cbf.cbf.fossil_dynamics import Barrier3System
-    from lbp_neural_cbf.cbf.network import BarrierNN
-
-    # Create test system
-    dynamics_model = Barrier3System(alpha=1.0)
-
-    # Load test model
-    model_path = f"data/mine_models_relu/{dynamics_model.system_name}_cbf.pth"
-
-    try:
-        model = BarrierNN(
-            input_size=dynamics_model.input_dim,
-            hidden_sizes=dynamics_model.hidden_sizes,
-            device='cpu'
-        )
-        model.load_state_dict(torch.load(model_path, map_location='cpu', weights_only=False))
-        model.eval()
-
-        # Create test simplex
-        vertices = np.array([[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]])
-        test_simplex = SimplicialRegion(vertices)
-
-        # Test compute_simplex_bound
-        print("\nTest 1: compute_simplex_bound")
-        print("-" * 40)
-
-        # Test unsafe region
-        unsafe_bound = compute_simplex_bound(model, test_simplex, dynamics_model, region_type='unsafe', device='cpu')
-        print(f"Unsafe region bound (h_max): {unsafe_bound.item():.6f}")
-        print(f"Verification condition: h_max < 0 ? {unsafe_bound.item() < 0}")
-
-        # Test safe region
-        safe_bound = compute_simplex_bound(model, test_simplex, dynamics_model, region_type='safe', device='cpu')
-        print(f"\nSafe region bound (min_L): {safe_bound.item():.6f}")
-        print(f"Verification condition: min_L >= 0 ? {safe_bound.item() >= 0}")
-
-        # Test compute_jacobian_matrix
-        print("\nTest 2: compute_jacobian_matrix")
-        print("-" * 40)
-
-        # Create test simplex sets
-        V_safe = [test_simplex]
-        V_unsafe = []
-
-        try:
-            J = compute_jacobian_matrix(model, V_safe, V_unsafe, dynamics_model, device='cpu')
-            print(f"Jacobian matrix shape: {J.shape}")
-            print(f"Total parameters: {J.shape[1]}")
-            print(f"Total constraints: {J.shape[0]}")
-
-            # Print partial Jacobian values
-            print("\nFirst 5x5 Jacobian values:")
-            print(J[:5, :5])
-
-            return {
-                'success': True,
-                'unsafe_bound': unsafe_bound.item(),
-                'safe_bound': safe_bound.item(),
-                'jacobian_shape': J.shape,
-                'jacobian_sample': J[:5, :5].tolist()
-            }
-
-        except Exception as e:
-            print(f"Jacobian computation failed: {e}")
-            import traceback
-            traceback.print_exc()
-            return {
-                'success': False,
-                'error': str(e),
-                'unsafe_bound': unsafe_bound.item(),
-                'safe_bound': safe_bound.item()
-            }
-
-    except Exception as e:
-        print(f"Model loading failed: {e}")
-        import traceback
-        traceback.print_exc()
-        return {
-            'success': False,
-            'error': f"Model loading failed: {e}"
-        }
-
-
-if __name__ == '__main__':
-    # Run tests
-    results = test_geometry_module()
-
-    print("\n" + "=" * 50)
-    print("Test Results Summary")
-    print("=" * 50)
-
-    if results.get('success', False):
-        print("All core functionality tests passed!")
-        print(f"  - Unsafe region bound: {results['unsafe_bound']:.6f}")
-        print(f"  - Safe region bound: {results['safe_bound']:.6f}")
-        print(f"  - Jacobian matrix shape: {results['jacobian_shape']}")
-    else:
-        print("Test failed!")
-        if 'error' in results:
-            print(f"  Error: {results['error']}")
+    return safe_grad_norms, unsafe_grad_norms

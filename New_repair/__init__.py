@@ -6,15 +6,11 @@ control barrier functions using verification-based approaches.
 """
 
 from .geometry_module import (
-    compute_lbp_bounds,
+    compute_simplex_bound,
     compute_jacobian_matrix,
-    compute_lbp_bounds_batch,
-    compute_lbp_bounds_with_crown
 )
 
 __all__ = [
-    "compute_lbp_bounds",
+    "compute_simplex_bound",
     "compute_jacobian_matrix",
-    "compute_lbp_bounds_batch",
-    "compute_lbp_bounds_with_crown",
 ]

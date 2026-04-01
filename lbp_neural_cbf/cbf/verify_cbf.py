@@ -226,6 +226,81 @@ def verify_cbf(
 
     print("=" * 60)
 
+    # ========== 保存验证区域用于修复 ==========
+    print("\n" + "=" * 60)
+    print("SAVING VERIFICATION REGIONS FOR REPAIR")
+    print("=" * 60)
+
+    # 创建四个列表用于存储验证区域
+    V_safe = []   # 安全区中验证通过的单纯形 (SAT, safe_cbf_verified)
+    V_unsafe = [] # 障碍区中验证通过的单纯形 (SAT, unsafe_region)
+    F_safe = []   # 安全区中验证失败的单纯形 (UNSAT, h_positive_in_unsafe, safe_cbf_violation)
+    F_unsafe = [] #F_unsafe = [] # 障碍区中验证失败的单纯形 (UNSAT, depth_limit_reached, unsafe_cannot_split)
+
+    for result in agg:
+        sample = result.sample
+
+        # 提取单纯形的几何坐标（转换为 numpy 数组，不保存带有计算图的 Tensor）
+        if hasattr(sample, 'vertices'):
+            vertices = np.array(sample.vertices, dtype=np.float32)
+        elif hasattr(sample, 'center_point') and hasattr(sample, 'radius_vec'):
+            # 对于 HyperrectangularRegion，从 center 和 radius 重构 vertices
+            center = np.array(sample.center_point, dtype=np.float32)
+            radius = np.array(sample.radius_vec, dtype=np.float32)
+            vertices = np.stack([
+                center - radius,
+                center + radius
+            ], axis=0)
+        else:
+            print(f"Warning: Cannot extract vertices from sample {type(sample)}")
+            continue
+
+        # 根据 result_type 和验证状态分类
+        if isinstance(result, SampleResultSAT):
+            result_type = result.result_type
+            if result_type == "unsafe_region":
+                V_unsafe.append(vertices)
+            elif result_type == "safe_cbf_verified":
+                V_safe.append(vertices)
+            else:
+                # 其他 SAT 类型，根据是否在 unsafe 区域判断
+                # 这里暂时归入 safe
+                V_safe.append(vertices)
+
+        elif isinstance(result, SampleResultUNSAT):
+            result_type = result.result_type
+            if result_type in ["h_positive_in_unsafe", "safe_cbf_violation"]:
+                # 安全区中的失败
+                F_safe.append(vertices)
+            else:
+                # 其他 UNSAT 类型（depth_limit_reached, unsafe_cannot_split 等）
+                F_unsafe.append(vertices)
+
+    # 打印统计信息
+    print(f"V_safe (verified safe regions): {len(V_safe)}")
+    print(f"V_unsafe (verified unsafe regions): {len(V_unsafe)}")
+    print(f"F_safe (failed safe regions): {len(F_safe)}")
+    print(f"F_unsafe (failed unsafe regions): {len(F_unsafe)}")
+
+    # 保存到文件
+    save_path = f"/data/mzm/mzm_Verification/verification-of-neural-cbf-mzm4/New_repair/regions/verified_regions_{dynamics_model.system_name}.pt"
+    # os.makedirs(os.path.dirname(save_path), exist_ok=True)
+
+    regions_data = {
+        'V_safe': V_safe,
+        'V_unsafe': V_unsafe,
+        'F_safe': F_safe,
+        'F_unsafe': F_unsafe,
+        'system_name': dynamics_model.system_name,
+        'input_dim': dynamics_model.input_dim,
+        'max_depth': max_depth
+    }
+
+    torch.save(regions_data, save_path)
+    print(f"Verification regions saved to: {save_path}")
+    print("=" * 60)
+    # ========== 保存验证区域结束 ==========
+
     # Note: Detailed W&B logging (statistics, splits, etc.) is handled by the executor
 
     return results
