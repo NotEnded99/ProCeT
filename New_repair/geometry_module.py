@@ -381,17 +381,18 @@ def compute_simplex_bound(
         # ========== 计算 α(h) 项 ==========
         # CBF 条件：∇h · f + α(h) >= 0
         # α(h) = α * h(x)，其中 α > 0 是 class-K 函数
-        alpha = dynamics_model.alpha if hasattr(dynamics_model, 'alpha') else 1.0
+        # alpha = dynamics_model.alpha if hasattr(dynamics_model, 'alpha') else 1.0
 
-        # h 的界（保守使用下界）
-        h_L = h_lb  # h 的下界
+        # # h 的界（保守使用下界）
+        # h_L = h_lb  # h 的下界
 
-        alpha_h_L = alpha * h_L
+        # alpha_h_L = alpha * h_L
 
-        # ========== CBF 条件下界 ==========
-        # min_L = ∇h · f 的下界 + α(h) 的下界
-        # 注意：α 是正数，所以 α * h 的下界是 α * h_lb
-        min_L = dh_df_L + alpha_h_L
+        # # ========== CBF 条件下界 ==========
+        # # min_L = ∇h · f 的下界 + α(h) 的下界
+        # # 注意：α 是正数，所以 α * h 的下界是 α * h_lb
+        # min_L = dh_df_L + alpha_h_L
+        min_L = dh_df_L 
 
         # 确保是标量并保留梯度
         return min_L.reshape(-1)
@@ -549,14 +550,17 @@ def compute_jacobian_matrix(
         x_lb = vertices.min(dim=0).values
         x_ub = vertices.max(dim=0).values
 
-        # 前向传播
-        h_lb, h_ub = _forward_pass_simple(model, x_lb, x_ub)
-
-        # 选择输出
+        # 根据区域类型计算对应的边界
         if region_type == 'unsafe':
+            # unsafe 区域：使用 h_ub（上界）
+            h_lb, h_ub = _forward_pass_simple(model, x_lb, x_ub)
             output = h_ub
         else:
-            output = h_lb
+            # safe 区域：使用 compute_simplex_bound 计算 CBF 条件下界
+            output = compute_simplex_bound(
+                model, vertices, region_type,
+                dynamics_model=dynamics_model, translator=translator
+            )
 
         # 计算对所有参数的梯度
         grad_list = []

@@ -20,7 +20,7 @@ import argparse
 project_root = Path(__file__).parent
 sys.path.insert(0, str(project_root))
 
-from lbp_neural_cbf.cbf.cbf_dynamics import Simple2DSystem, StateDependentControl2DSystem
+from lbp_neural_cbf.cbf.cbf_dynamics import Simple2DSystem
 from lbp_neural_cbf.cbf.fossil_dynamics import (
     Barrier1System, Barrier2System, Barrier3System, Barrier4System,
     HighOrd2System
@@ -30,7 +30,7 @@ from lbp_neural_cbf.visualization.cbf_plotter import CBFVerificationPlotter
 
 class SimpleCBFNet(nn.Module):
     """Simple CBF network matching the saved model architecture."""
-    def __init__(self, input_dim=2, hidden_sizes=[128, 256, 128], activation='relu'):
+    def __init__(self, input_dim=2, hidden_sizes=[32, 64, 32], activation='relu'):
         super().__init__()
         self.input_dim = input_dim
         self.hidden_sizes = hidden_sizes
@@ -43,10 +43,13 @@ class SimpleCBFNet(nn.Module):
                 layers.append(nn.ReLU())
             elif activation.lower() == 'tanh':
                 layers.append(nn.Tanh())
+            elif activation.lower() == 'sigmoid':
+                layers.append(nn.Sigmoid())
             prev_size = hidden_size
         layers.append(nn.Linear(prev_size, 1))
 
         self.network = nn.Sequential(*layers)
+        
 
     def forward(self, x):
         return self.network(x)
@@ -57,10 +60,8 @@ def load_model(model_path, dynamics):
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
     # Create network with appropriate architecture
-    if hasattr(dynamics, 'hidden_sizes'):
-        hidden_sizes = dynamics.hidden_sizes
-    else:
-        hidden_sizes = [128, 256, 128]
+
+    hidden_sizes = [32, 64, 32]
 
     if hasattr(dynamics, 'activation_fnc'):
         activation = dynamics.activation_fnc
@@ -74,7 +75,9 @@ def load_model(model_path, dynamics):
     ).to(device)
 
     # Load weights
-    state_dict = torch.load(model_path, map_location=device)
+    print(f"  Loading model from: {model_path}")
+    # state_dict = torch.load(model_path, map_location=device)
+    state_dict = torch.load(model_path, map_location=device, weights_only=True)
     model.load_state_dict(state_dict)
     model.eval()
 
@@ -94,7 +97,7 @@ def visualize_cbf(model_path, dynamics, output_path, alpha=1.0, resolution=300):
     """
     try:
         # Load model
-        model, device = load_model(model_path, dynamics)
+        model, device = load_model(model_path, dynamics, )
 
         # Create plotter
         plotter = CBFVerificationPlotter(
@@ -215,8 +218,11 @@ def main():
     # 例如: [('data/author_models', 'author'), ('data/mine_models_relu', 'relu')]
     manual_dirs = [
         # ('data/author_models', 'author'),      # 作者提供的模型
-        ('data/mine_models_relu', 'relu'),     # ReLU激活函数训练的模型
-        ('data/mine2_models_relu', 'relu2'),   # 取消注释以添加更多目录
+        # ('data/mine_models_relu', 'relu'),     # 
+        # ('data/mine2_models_relu', 'relu2'),   # 
+        ('data/New_models_Hard_Relu', 'Relu'),     
+        ('data/New_models_Hard_Sigmoid', 'Sigmoid'),  
+        ('data/New_models_Hard_Tanh', 'Tanh'),   
     ]
 
     # 指定要可视化的系统
@@ -262,13 +268,15 @@ def main():
         return 0, 0
 
     # 输出目录
-    output_dir = Path(output_dir_path)
-    output_dir.mkdir(parents=True, exist_ok=True)
+    # output_dir = Path(output_dir_path)
+    # output_dir.mkdir(parents=True, exist_ok=True)
+    output_dir = "/data/mzm/mzm_Verification/verification-of-neural-cbf-mzm4/New_repair/figures"
+
 
     print("=" * 70)
     print("CBF Neural Network Visualization")
     print("=" * 70)
-    print(f"Output directory: {output_dir.absolute()}")
+    print(f"Output directory: {output_dir}")
     print(f"Systems: {', '.join(systems_2d.keys())}")
     print(f"Model directories: {', '.join(d for d, _ in model_dirs)}")
     print("=" * 70)
@@ -296,10 +304,14 @@ def main():
 
             # Create dynamics instance
             dynamics = config['dynamics']()
+            # 设置激活函数
+            if hasattr(dynamics, 'activation_fnc'):
+                dynamics.activation_fnc = variant
+                # print(f"  Set activation function to {variant} for {system_name}")
             alpha = config['alpha']
 
             # Create output filename
-            output_file = output_dir / f"{system_name}_{variant}_cbf.png"
+            output_file = output_dir + f"/cbf_{system_name}_{variant}.png"
 
             # Generate visualization
             if visualize_cbf(model_file, dynamics, output_file, alpha):
@@ -307,7 +319,7 @@ def main():
 
     print(f"\n{'='*70}")
     print(f"Visualization Complete: {success}/{total} successful")
-    print(f"Output directory: {output_dir.absolute()}")
+    # print(f"Output directory: {output_dir.absolute()}")
     print(f"{'='*70}")
 
     return success, total

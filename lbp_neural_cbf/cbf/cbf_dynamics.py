@@ -237,7 +237,14 @@ class Simple2DSystem(CBFDynamicalSystem):
         # Define unsafe set (obstacles to avoid)
         if unsafe_set is None:
             # Default: single circular obstacle
-            self.unsafe_set_def = {"type": "circle", "center": [1.5, 0.0], "radius": 0.3}
+            # self.unsafe_set_def = {"type": "circle", "center": [1.5, 0.0], "radius": 0.3}
+            self.unsafe_set_def = {
+                                "type": "union",
+                                "regions": [
+                                    {"type": "circle", "center": [1.5, 0.0], "radius": 0.3},   # 原有的
+                                    {"type": "circle", "center": [-1.0, -0.5], "radius": 0.6}, # 新增的
+                                ]
+                            }
         else:
             self.unsafe_set_def = unsafe_set
 
@@ -258,7 +265,8 @@ class Simple2DSystem(CBFDynamicalSystem):
         # Default translator for verification
         self.translator = NumpyTranslator()
 
-        self.hidden_sizes = [64, 64, 8]  # Hidden layer sizes for neural network
+        # self.hidden_sizes = [64, 64, 8]  # Hidden layer sizes for neural network
+        self.hidden_sizes = [32, 64, 32]  # Hidden layer sizes for neural network
 
         # Delta for region generation (half-width of hyperrectangles)
         self.delta = np.array([0.5, 0.5])  # Reasonable grid spacing for 2D system
@@ -831,7 +839,8 @@ class CartPoleSystem(CBFDynamicalSystem):
         self.translator = NumpyTranslator()
 
         # Network parameters
-        self.hidden_sizes = [64, 64]
+        # self.hidden_sizes = [64, 64]
+        self.hidden_sizes = [32, 64, 32]
 
         # Delta for region generation
         self.delta = np.array([0.3, 0.5, np.pi / 12, 0.3])

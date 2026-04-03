@@ -14,7 +14,7 @@ from lbp_neural_cbf.cbf.cbf_dynamics import Simple2DSystem, CartPoleSystem, Rend
 from lbp_neural_cbf.cbf.fossil_dynamics import Barrier1System, Barrier2System, Barrier3System, Barrier4System, HighOrd2System, HighOrd4System, HighOrd6System, HighOrd8System
 from lbp_neural_cbf.visualization.cbf_plotter import create_cbf_verification_plotter
 
-def main(system_type="barr1", train=True, verify=False, alpha=1.0, region_type="simplicial", executor_type="single", max_depth=None):
+def main(system_type="barr1", train=True, verify=False, alpha=1.0, region_type="simplicial", executor_type="single", max_depth=None, activation=None, hidden_sizes=None, save_path=None):
     """
     Main script for training and verifying neural control barrier functions.
 
@@ -89,6 +89,20 @@ def main(system_type="barr1", train=True, verify=False, alpha=1.0, region_type="
     
     barrier_net = None
     
+        # Override activation function and save paths if specified
+    if activation is not None:
+        valid_activations = ["Tanh", "Relu", "Sigmoid"]
+        if activation not in valid_activations:
+            raise ValueError(f"Invalid activation function: {activation}. Must be one of {valid_activations}")
+        dynamics_model.activation_fnc = activation
+        print(f"  Using activation function: {activation} (overriding default)")
+
+    # Override hidden sizes if specified (e.g. "64,128,64" -> [64, 128, 64])
+    if hidden_sizes is not None:
+        parsed = [int(x.strip()) for x in hidden_sizes.split(",")]
+        dynamics_model.hidden_sizes = parsed
+        print(f"  Using hidden sizes: {parsed} (overriding default)")
+
     if train:
         print("\n" + "-"*40)
         print("TRAINING PHASE")
@@ -99,28 +113,43 @@ def main(system_type="barr1", train=True, verify=False, alpha=1.0, region_type="
 
         # Try to load best training params for this system if available
         system_key = dynamics_model.system_name
-        best_params_path = os.path.join('data', 'cbf_best_params', f"{system_key}_best_params.json")
-        if os.path.exists(best_params_path):
-            print(f"Found best-params JSON for {system_key}: {best_params_path}")
-            with open(best_params_path, 'r') as f:
-                payload = json.load(f)
-            best_training_params = payload.get('training_params', {})
-            if best_training_params:
-                print("Using best training parameters from JSON.")
-                training_params = best_training_params
-                training_params['use_wandb'] = True  # Enable wandb logging for standard training
-                training_params['wandb_viz_freq'] = 500
-            else:
-                print("Best-params JSON present but missing 'training_params' field; using defaults.")
-        else:
-            print("No best-params JSON found; using default training parameters.")
+        
+        # best_params_path = os.path.join('data', 'cbf_best_params', f"{system_key}_best_params.json")
+        # if os.path.exists(best_params_path):
+        #     print(f"Found best-params JSON for {system_key}: {best_params_path}")
+        #     with open(best_params_path, 'r') as f:
+        #         payload = json.load(f)
+        #     best_training_params = payload.get('training_params', {})
+        #     if best_training_params:
+        #         print("Using best training parameters from JSON.")
+        #         training_params = best_training_params
+        #         training_params['use_wandb'] = True  # Enable wandb logging for standard training
+        #         training_params['wandb_viz_freq'] = 500
+        #     else:
+        #         print("Best-params JSON present but missing 'training_params' field; using defaults.")
+        # else:
+        #     print("No best-params JSON found; using default training parameters.")
+        print("No best-params JSON found; using default training parameters.")
         
         print("Training parameters:")
         for key, value in training_params.items():
             print(f"  {key}: {value}")
         
+
+        if save_path is not None:
+            if not os.path.exists(save_path):
+                os.makedirs(save_path, exist_ok=True)
+            save_path_torch = os.path.join(save_path, f"{system_key}_cbf.pth")
+            save_path_onnx = os.path.join(save_path, f"{system_key}_cbf.onnx")
+            print(f"  Torch model will be saved to: {save_path_torch}")
+            print(f"  ONNX model will be saved to: {save_path_onnx}")
         # Train the CBF
-        barrier_net = train_cbf(dynamics_model, **training_params)
+        barrier_net = train_cbf(
+            dynamics_model,
+            save_path_torch=save_path_torch,
+            save_path_onnx=save_path_onnx,
+            **training_params
+        )
     
     if verify:
         print("\n" + "-"*40)
@@ -128,11 +157,17 @@ def main(system_type="barr1", train=True, verify=False, alpha=1.0, region_type="
         print("-"*40)
 
         # Define path to the ONNX model for verification
-        network_path = f"data/mine_models_relu/{dynamics_model.system_name}_cbf.onnx"
+        # network_path = f"data/mine_models_relu/{dynamics_model.system_name}_cbf.onnx"
         # network_path = f"data/author_models/{dynamics_model.system_name}_cbf.onnx"
+        if activation == "Tanh":
+            network_path = f"/data/mzm/mzm_Verification/verification-of-neural-cbf-mzm4/data/New_models_Hard_Tanh/{dynamics_model.system_name}_cbf.onnx"
+        elif activation == "Relu":
+            network_path = f"/data/mzm/mzm_Verification/verification-of-neural-cbf-mzm4/data/New_models_Hard_Relu/{dynamics_model.system_name}_cbf.onnx"
+        elif activation == "Sigmoid":
+            network_path = f"/data/mzm/mzm_Verification/verification-of-neural-cbf-mzm4/data/New_models_Hard_Sigmoid/{dynamics_model.system_name}_cbf.onnx"
+        else:
+            raise ValueError(f"Unsupported activation function for verification: {activation}")
         
-        print(f"Verifying network: {network_path}")
-
         # Verification parameters
         verification_params = {
             'executor_type': executor_type,  # Type of executor (single, multi-thread, or multi-process)
@@ -210,9 +245,9 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Neural Control Barrier Function Experiment")
     parser.add_argument("--system-type", type=str, default="barr1",
                        help="Type of dynamical system (default: barr1)")
-    parser.add_argument("--train", action="store_true",
+    parser.add_argument("--train", action="store_true", 
                        help="Whether to train the CBF")
-    parser.add_argument("--verify", action="store_true", default=False,
+    parser.add_argument("--verify", action="store_true", 
                        help="Whether to verify the CBF (default: True)")
     parser.add_argument("--alpha", type=float, default=1.0,
                        help="Alpha parameter for the CBF (default: 1.0)")
@@ -224,6 +259,12 @@ if __name__ == "__main__":
                        help="Type of executor (default: single)")
     parser.add_argument("--max-depth", type=int, default=15,
                        help="Maximum depth for region splitting (None for unlimited)")
+    
+    parser.add_argument("--activation", type=str, default="Tanh", choices=["Tanh", "Relu", "Sigmoid"],
+                       help="Activation function for the barrier network (overrides system default)")
+    parser.add_argument("--hidden-sizes", type=str, default='32,64,32',
+                       help="Hidden layer sizes, e.g. '32,64,32' (overrides system default)")
+    parser.add_argument("--save-path", type=str, default="data/New_models_Hard_Tanh")
 
     args = parser.parse_args()
 
@@ -235,5 +276,8 @@ if __name__ == "__main__":
         alpha=args.alpha,
         region_type=args.region_type,
         executor_type=args.executor_type,
-        max_depth=args.max_depth
+        max_depth=args.max_depth,
+        activation=args.activation,
+        hidden_sizes=args.hidden_sizes,
+        save_path=args.save_path,
     )

@@ -3,6 +3,8 @@ import os
 import time
 import traceback
 import types
+import logging
+from datetime import datetime
 
 import numpy as np
 import torch
@@ -125,7 +127,7 @@ def verify_cbf(
                 device = torch.device("cuda" if (use_gpu and torch.cuda.is_available()) else "cpu")
                 # Try PyTorch file first
                 if barrier_model_path.endswith(".pth") and os.path.exists(barrier_model_path):
-                    barrier_net = BarrierNN(input_size=dynamics_model.input_dim, hidden_sizes=getattr(dynamics_model, "hidden_sizes"), device=device)
+                    barrier_net = BarrierNN(input_size=dynamics_model.input_dim, hidden_sizes=getattr(dynamics_model, "hidden_sizes"), activation_fnc=getattr(dynamics_model, "activation_fnc", "Tanh"), device=device)
                     barrier_net.load_state_dict(torch.load(barrier_model_path, map_location=device, weights_only=False))
                     barrier_net.eval()
                     print(f"Loaded BarrierNN model from {barrier_model_path}")
@@ -133,7 +135,7 @@ def verify_cbf(
                 elif barrier_model_path.endswith(".onnx"):
                     pth_path = barrier_model_path.replace(".onnx", ".pth")
                     if os.path.exists(pth_path):
-                        barrier_net = BarrierNN(input_size=dynamics_model.input_dim, hidden_sizes=getattr(dynamics_model, "hidden_sizes"), device=device)
+                        barrier_net = BarrierNN(input_size=dynamics_model.input_dim, hidden_sizes=getattr(dynamics_model, "hidden_sizes"), activation_fnc=getattr(dynamics_model, "activation_fnc", "Tanh"), device=device)
                         barrier_net.load_state_dict(torch.load(pth_path, map_location=device, weights_only=False))
                         barrier_net.eval()
                         print(f"Loaded BarrierNN model from {pth_path} for visualization (ONNX verification)")
@@ -231,11 +233,13 @@ def verify_cbf(
     print("SAVING VERIFICATION REGIONS FOR REPAIR")
     print("=" * 60)
 
-    # 创建四个列表用于存储验证区域
-    V_safe = []   # 安全区中验证通过的单纯形 (SAT, safe_cbf_verified)
-    V_unsafe = [] # 障碍区中验证通过的单纯形 (SAT, unsafe_region)
-    F_safe = []   # 安全区中验证失败的单纯形 (UNSAT, h_positive_in_unsafe, safe_cbf_violation)
-    F_unsafe = [] #F_unsafe = [] # 障碍区中验证失败的单纯形 (UNSAT, depth_limit_reached, unsafe_cannot_split)
+    # 创建六个列表用于存储验证区域（每种 result_type 单独保存）
+    V_safe = []              # SAT, safe_cbf_verified — 安全区中验证通过
+    V_unsafe = []             # SAT, unsafe_region — 障碍区中验证通过
+    F_h_positive_in_unsafe = []    # UNSAT, h_positive_in_unsafe — 障碍区内 h(x) >= 0 的违规
+    F_safe_cbf_violation = []      # UNSAT, safe_cbf_violation — 安全区内 CBF 条件违规
+    F_depth_limit_reached = []     # UNSAT, depth_limit_reached — 达到最大分裂深度
+    F_unsafe_cannot_split = []      # UNSAT, unsafe_cannot_split — 障碍区无法继续细分
 
     for result in agg:
         sample = result.sample
@@ -255,49 +259,135 @@ def verify_cbf(
             print(f"Warning: Cannot extract vertices from sample {type(sample)}")
             continue
 
-        # 根据 result_type 和验证状态分类
+        # 根据 result_type 分类到对应列表
         if isinstance(result, SampleResultSAT):
             result_type = result.result_type
             if result_type == "unsafe_region":
                 V_unsafe.append(vertices)
             elif result_type == "safe_cbf_verified":
                 V_safe.append(vertices)
-            else:
-                # 其他 SAT 类型，根据是否在 unsafe 区域判断
-                # 这里暂时归入 safe
-                V_safe.append(vertices)
+            # else:
+            #     # 其他 SAT 类型，暂归入 safe
+            #     V_safe.append(vertices)
 
         elif isinstance(result, SampleResultUNSAT):
             result_type = result.result_type
-            if result_type in ["h_positive_in_unsafe", "safe_cbf_violation"]:
-                # 安全区中的失败
-                F_safe.append(vertices)
-            else:
-                # 其他 UNSAT 类型（depth_limit_reached, unsafe_cannot_split 等）
-                F_unsafe.append(vertices)
+            if result_type == "h_positive_in_unsafe":
+                F_h_positive_in_unsafe.append(vertices)
+            elif result_type == "safe_cbf_violation":
+                F_safe_cbf_violation.append(vertices)
+            elif result_type == "depth_limit_reached":
+                F_depth_limit_reached.append(vertices)
+            elif result_type == "unsafe_cannot_split":
+                F_unsafe_cannot_split.append(vertices)
+            # else:
+            #     # 未知的 UNSAT 类型，暂归入 safe_cbf_violation
+            #     F_safe_cbf_violation.append(vertices)
 
     # 打印统计信息
-    print(f"V_safe (verified safe regions): {len(V_safe)}")
-    print(f"V_unsafe (verified unsafe regions): {len(V_unsafe)}")
-    print(f"F_safe (failed safe regions): {len(F_safe)}")
-    print(f"F_unsafe (failed unsafe regions): {len(F_unsafe)}")
+    print(f"V_safe (safe_cbf_verified): {len(V_safe)}")
+    print(f"V_unsafe (unsafe_region): {len(V_unsafe)}")
+    print(f"F_h_positive_in_unsafe: {len(F_h_positive_in_unsafe)}")
+    print(f"F_safe_cbf_violation: {len(F_safe_cbf_violation)}")
+    print(f"F_depth_limit_reached: {len(F_depth_limit_reached)}")
+    print(f"F_unsafe_cannot_split: {len(F_unsafe_cannot_split)}")
 
-    # 保存到文件
-    save_path = f"/data/mzm/mzm_Verification/verification-of-neural-cbf-mzm4/New_repair/regions/verified_regions_{dynamics_model.system_name}.pt"
-    # os.makedirs(os.path.dirname(save_path), exist_ok=True)
+    # 获取激活函数名称
+    activation_fnc = getattr(dynamics_model, 'activation_fnc', 'Unknown')
+
+    # 保存到文件（文件名包含激活函数）
+    regions_dir = "/data/mzm/mzm_Verification/verification-of-neural-cbf-mzm4/New_repair/regions"
+    os.makedirs(regions_dir, exist_ok=True)
+    save_path = f"{regions_dir}/verified_regions_{dynamics_model.system_name}_{activation_fnc}.pt"
 
     regions_data = {
         'V_safe': V_safe,
         'V_unsafe': V_unsafe,
-        'F_safe': F_safe,
-        'F_unsafe': F_unsafe,
+        'F_h_positive_in_unsafe': F_h_positive_in_unsafe,
+        'F_safe_cbf_violation': F_safe_cbf_violation,
+        'F_depth_limit_reached': F_depth_limit_reached,
+        'F_unsafe_cannot_split': F_unsafe_cannot_split,
         'system_name': dynamics_model.system_name,
+        'activation_fnc': activation_fnc,
         'input_dim': dynamics_model.input_dim,
-        'max_depth': max_depth
+        'max_depth': max_depth,
+        "Certified percentage": certified_percentage,
+        "Uncertified percentage": uncertified_percentage,
     }
 
     torch.save(regions_data, save_path)
     print(f"Verification regions saved to: {save_path}")
+
+    # ========== 保存验证日志到文件 ==========
+    logs_dir = "/data/mzm/mzm_Verification/verification-of-neural-cbf-mzm4/New_repair/logs"
+    os.makedirs(logs_dir, exist_ok=True)
+
+    # 生成日志文件名（包含时间戳）
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    log_filename = f"verify_{dynamics_model.system_name}_{activation_fnc}_{timestamp}.log"
+    log_path = os.path.join(logs_dir, log_filename)
+
+    # 配置日志记录器
+    logger = logging.getLogger('cbf_verification')
+    logger.setLevel(logging.INFO)
+    logger.handlers = []  # 清除已有的handlers
+
+    # 文件Handler
+    file_handler = logging.FileHandler(log_path, mode='w', encoding='utf-8')
+    file_handler.setLevel(logging.INFO)
+
+    # 控制台Handler
+    console_handler = logging.StreamHandler()
+    console_handler.setLevel(logging.INFO)
+
+    # 格式化
+    formatter = logging.Formatter('%(message)s')
+    file_handler.setFormatter(formatter)
+    console_handler.setFormatter(formatter)
+
+    logger.addHandler(file_handler)
+    logger.addHandler(console_handler)
+
+    # 写入验证结果日志
+    logger.info("=" * 60)
+    logger.info("CBF VERIFICATION LOG")
+    logger.info("=" * 60)
+    logger.info(f"Timestamp: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    logger.info(f"System: {dynamics_model.system_name}")
+    logger.info(f"Activation Function: {activation_fnc}")
+    logger.info(f"Network Path: {barrier_model_path}")
+    logger.info(f"Region Type: {region_type}")
+    logger.info(f"Executor Type: {executor_type}")
+    logger.info(f"Max Depth: {max_depth}")
+    logger.info(f"Batch Size: {batch_size}")
+    logger.info(f"Input Dimension: {dynamics_model.input_dim}")
+    logger.info(f"Control Dimension: {dynamics_model.control_dim}")
+    logger.info("-" * 60)
+    logger.info("VERIFICATION RESULTS")
+    logger.info("-" * 60)
+    logger.info(f"Certified percentage: {certified_percentage:.4f}%")
+    logger.info(f"Uncertified percentage: {uncertified_percentage:.4f}%")
+    logger.info(f"Computation time: {computation_time:.2f} seconds")
+    logger.info(f"Total samples processed: {total_samples}")
+    logger.info(f"Iterations per second: {iterations_per_second:.2f} it/s")
+    logger.info("-" * 60)
+    logger.info("REGION STATISTICS")
+    logger.info("-" * 60)
+    logger.info(f"V_safe (safe_cbf_verified): {len(V_safe)}")
+    logger.info(f"V_unsafe (unsafe_region): {len(V_unsafe)}")
+    logger.info(f"F_h_positive_in_unsafe: {len(F_h_positive_in_unsafe)}")
+    logger.info(f"F_safe_cbf_violation: {len(F_safe_cbf_violation)}")
+    logger.info(f"F_depth_limit_reached: {len(F_depth_limit_reached)}")
+    logger.info(f"F_unsafe_cannot_split: {len(F_unsafe_cannot_split)}")
+    logger.info("=" * 60)
+
+    # 关闭handlers以确保日志写入文件
+    file_handler.close()
+    console_handler.close()
+    logger.removeHandler(file_handler)
+    logger.removeHandler(console_handler)
+
+    print(f"Verification log saved to: {log_path}")
     print("=" * 60)
     # ========== 保存验证区域结束 ==========
 
@@ -345,9 +435,11 @@ class CBFVerificationStrategy:
         dtype = torch.float32
 
         pth_path = self.network_path.replace(".onnx", ".pth")
+        activation_fnc = getattr(self.dynamics_model, 'activation_fnc', 'Tanh')
         _LOCAL.torch_model = BarrierNN(
             input_size=self.dynamics_model.input_dim,
             hidden_sizes=self.dynamics_model.hidden_sizes,
+            activation_fnc=activation_fnc,
             device=device,
         )
         _LOCAL.torch_model.load_state_dict(torch.load(pth_path, map_location=device, weights_only=False))
@@ -449,7 +541,6 @@ class CBFVerificationStrategy:
                         unsat_type="unsafe_cannot_split",
                         max_depth=max_depth,
                     )
-
             # Case 3: h(x) >= 0 somewhere on this region (barrier indicates somewhere safe)
             else:
                 # Region is classified as safe thus we need the to verify CBF condition

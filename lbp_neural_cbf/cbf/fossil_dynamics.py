@@ -215,7 +215,8 @@ class Barrier1System(CBFDynamicalSystem):
         # Default translator for verification
         self.translator = NumpyTranslator()
 
-        self.hidden_sizes = [128, 256, 128]  # Hidden layer sizes for neural network
+        # self.hidden_sizes = [128, 256, 128]  # Hidden layer sizes for neural network
+        self.hidden_sizes = [32, 64, 32]
         # self.activation_fnc = "Tanh"
         self.activation_fnc = "Relu"
 
@@ -305,7 +306,11 @@ class Barrier2System(CBFDynamicalSystem):
         self.input_domain = BoxDomain([[-2, 2], [-2, 2]])
 
         # Parse unsafe set into domain object
-        self.unsafe_set_interior = CircleDomain(center=[0.7, -0.7], radius=0.3)
+        # self.unsafe_set_interior = CircleDomain(center=[0.7, -0.7], radius=0.3)
+        self.unsafe_set_interior = UnionDomain([
+                                    CircleDomain(center=[0.7, -0.7], radius=0.3),  # 原有的
+                                    CircleDomain(center=[-0.5, 0.5], radius=0.25), # 新增的
+                                ])
         self.unsafe_set_exterior = BoxExteriorDomain(self.input_domain.bounds)
         self.unsafe_set = UnionDomain([self.unsafe_set_interior, self.unsafe_set_exterior])
 
@@ -320,7 +325,8 @@ class Barrier2System(CBFDynamicalSystem):
         # Default translator for verification
         self.translator = NumpyTranslator()
 
-        self.hidden_sizes = [64, 64]  # Hidden layer sizes for neural network
+        # self.hidden_sizes = [64, 64]  # Hidden layer sizes for neural network
+        self.hidden_sizes = [32, 64, 32]
 
         # Delta for region generation (half-width of hyperrectangles)
         self.delta = np.array([0.5, 0.5])  # Reasonable grid spacing for 2D system
@@ -487,10 +493,17 @@ class Barrier3System(CBFDynamicalSystem):
         self.input_domain = BoxDomain([[-3, 2.5], [-2, 1]])
 
         # Parse unsafe set into domain object
-        self.unsafe_set_interior = UnionDomain(
-            [CircleDomain(center=[-1, -1], radius=0.4), LShapeDomain(BoxDomain([[0.4, 0.6], [0.1, 0.5]]), BoxDomain([[0.4, 0.8], [0.1, 0.3]]))],
-            known_separated=True,
-        )
+        # self.unsafe_set_interior = UnionDomain(
+        #     [CircleDomain(center=[-1, -1], radius=0.4), LShapeDomain(BoxDomain([[0.4, 0.6], [0.1, 0.5]]), BoxDomain([[0.4, 0.8], [0.1, 0.3]]))],
+        #     known_separated=True,
+        # )
+        self.unsafe_set_interior = UnionDomain([
+                        CircleDomain(center=[-1, -1], radius=0.4),                           # 原有的圆
+                        LShapeDomain(BoxDomain([[0.4, 0.6], [0.1, 0.5]]), 
+                                    BoxDomain([[0.4, 0.8], [0.1, 0.3]])),                  # 原有的L形
+                        CircleDomain(center=[1.0, 0.0], radius=0.3),                         # 新增的
+                    ])
+        
         self.unsafe_set_exterior = BoxExteriorDomain(self.input_domain.bounds)
         self.unsafe_set = UnionDomain([self.unsafe_set_interior, self.unsafe_set_exterior])
 
@@ -505,7 +518,8 @@ class Barrier3System(CBFDynamicalSystem):
         # Default translator for verification
         self.translator = NumpyTranslator()
 
-        self.hidden_sizes = [64, 64]  # Hidden layer sizes for neural network
+        # self.hidden_sizes = [64, 64]  # Hidden layer sizes for neural network
+        self.hidden_sizes = [32, 64, 32]
 
         # Delta for region generation (half-width of hyperrectangles)
         self.delta = np.array([0.5, 0.5])  # Reasonable grid spacing for 2D system
@@ -610,7 +624,8 @@ class Barrier4System(CBFDynamicalSystem):
         # Default translator for verification
         self.translator = NumpyTranslator()
 
-        self.hidden_sizes = [64, 64]  # Hidden layer sizes for neural network
+        # self.hidden_sizes = [64, 64]  # Hidden layer sizes for neural network
+        self.hidden_sizes = [32, 64, 32]
 
         # Delta for region generation (half-width of hyperrectangles)
         self.delta = np.array([0.5, 0.5, 0.5])  # Reasonable grid spacing for 2D system

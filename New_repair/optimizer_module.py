@@ -7,7 +7,7 @@
 3. project_and_update: 隐式投影和参数更新
 """
 
-from typing import List, Tuple, Union, Optional
+from typing import List, Tuple, Union, Dict, Optional
 
 import torch
 import torch.nn as nn
@@ -86,24 +86,78 @@ def compute_repair_loss_and_grad(
     # 障碍区的目标：h_max < 0（网络应该输出负值）
     # Loss = sum(ReLU(h_max - tolerance))，其中 tolerance 应该为 0
 
+    # for i, vertices in enumerate(F_unsafe):
+    #     # 计算网络输出的上界 (h_max)
+    #     h_max = compute_simplex_bound(
+    #         model, vertices, 'unsafe',
+    #         dynamics_model=None,
+    #         translator=translator
+    #     )
+
+    #     # Hinge Loss: max(0, h_max - 0) = max(0, h_max)
+    #     # 我们希望 h_max < 0，所以对于 h_max > 0 的区域施加惩罚
+    #     loss_term = torch.clamp(h_max - 0.0, min=0.0)
+
+    #     if loss_term > 0:
+    #         total_loss = total_loss + loss_term
+    #         num_terms += 1
+
+    #     if verbose and i == 0:
+    #         print(f"  F_unsafe[0] h_max: {h_max.item():.6f}, loss_term: {loss_term.item():.6f}")
+
+
+    #     for i, vertices in enumerate(F_unsafe):
+    #     # 计算网络输出的上界 (h_max)
+    #     h_max = compute_simplex_bound(
+    #         model, vertices, 'unsafe',
+    #         dynamics_model=None,
+    #         translator=translator
+    #     )
+
+    #     # Hinge Loss: max(0, h_max - 0) = max(0, h_max)
+    #     # 我们希望 h_max < 0，所以对于 h_max > 0 的区域施加惩罚
+    #     loss_term = torch.clamp(h_max - 0.0, min=0.0)
+
+    #     if loss_term > 0:
+    #         total_loss = total_loss + loss_term
+    #         num_terms += 1
+
+    #     if verbose and i == 0:
+    #         print(f"  F_unsafe[0] h_max: {h_max.item():.6f}, loss_term: {loss_term.item():.6f}")
+
+
+
     for i, vertices in enumerate(F_unsafe):
-        # 计算网络输出的上界 (h_max)
+        # --- 计算条件 1 的损失 ---
         h_max = compute_simplex_bound(
             model, vertices, 'unsafe',
             dynamics_model=None,
             translator=translator
         )
+        # 我们希望 h_max <= 0，违背则惩罚
+        loss_term_h = torch.clamp(h_max - 0.0, min=0.0)
 
-        # Hinge Loss: max(0, h_max - 0) = max(0, h_max)
-        # 我们希望 h_max < 0，所以对于 h_max > 0 的区域施加惩罚
-        loss_term = torch.clamp(h_max - 0.0, min=0.0)
+        # --- 计算条件 2 的损失 ---
+        min_L = compute_simplex_bound(
+            model, vertices, 'safe', # 注意：这里按照你的要求使用了 'safe' 逻辑
+            dynamics_model=dynamics_model,
+            translator=translator
+        )
+        # 我们希望 min_L >= tolerance，违背则惩罚
+        loss_term_L = torch.clamp(tolerance - min_L, min=0.0)
+
+        # ========== 核心逻辑：满足其一即可 ==========
+        # 取两个损失的最小值。只要其中一个为 0，整体 loss_term 就为 0。
+        loss_term = torch.min(loss_term_h, loss_term_L)
 
         if loss_term > 0:
             total_loss = total_loss + loss_term
             num_terms += 1
 
         if verbose and i == 0:
-            print(f"  F_unsafe[0] h_max: {h_max.item():.6f}, loss_term: {loss_term.item():.6f}")
+            print(f"  F_unsafe[0] h_max: {h_max.item():.6f}, min_L: {min_L.item():.6f}")
+            print(f"  F_unsafe[0] loss_h: {loss_term_h.item():.6f}, loss_L: {loss_term_L.item():.6f}, final_loss: {loss_term.item():.6f}")
+    
 
     if verbose:
         print(f"  总损失项数: {num_terms}, 总损失: {total_loss.item():.6f}")
@@ -369,3 +423,86 @@ def repair_iteration(
     )
 
     return loss.item(), grad_norm, k_effective
+
+
+def repair_loop(
+    model: nn.Module,
+    J: torch.Tensor,
+    F_safe: List[Union[torch.Tensor, np.ndarray]],
+    F_unsafe: List[Union[torch.Tensor, np.ndarray]],
+    dynamics_model,
+    translator,
+    max_iters: int = 20,       # 新增：最大迭代次数
+    target_loss: float = 1e-6, # 新增：目标 Loss 阈值 (Hinge Loss 为 0 时表示完全修复)
+    grad_tol: float = 1e-6,    # 新增：梯度范数阈值，低于此值说明优化停滞
+    k_rank: int = 500,
+    lr: float = 1e-3,
+    alpha: float = 0.0,
+    tolerance: float = -1e-12,
+    verbose: bool = False
+) -> List[Dict[str, float]]:
+    """
+    执行多次迭代修复，直到满足终止条件或达到最大迭代次数。
+    
+    Returns:
+        history: 包含每次迭代损失、梯度等记录的列表
+    """
+    print(f"\n{'=' * 50}")
+    print(f"🚀 开始多轮修复 (Max Iters: {max_iters}, Target Loss: {target_loss})")
+    print(f"{'=' * 50}")
+
+    history = []
+
+    for i in range(max_iters):
+        if verbose:
+            print(f"\n>>> [Iter {i+1}/{max_iters}] 开始执行...")
+
+        # 1. 执行单次修复
+        loss, grad_norm, k_effective = repair_iteration(
+            model=model,
+            J=J,
+            F_safe=F_safe,
+            F_unsafe=F_unsafe,
+            dynamics_model=dynamics_model,
+            translator=translator,
+            k_rank=k_rank,
+            lr=lr,
+            alpha=alpha,
+            tolerance=tolerance,
+            verbose=verbose
+        )
+
+        # 2. 记录当前迭代的状态
+        history.append({
+            "iter": i + 1,
+            "loss": loss,
+            "grad_norm": grad_norm,
+            "k_effective": k_effective
+        })
+
+        if verbose:
+            # 详细模式：保留你原本的多行格式，但加上轮次标题以防眼花
+            print(f"    [Iter {i+1}/{max_iters}] 结果:")
+            print(f"      损失: {loss:.4f}")
+            print(f"      梯度范数: {grad_norm:.4f}")
+            print(f"      实际 rank: {k_effective}")
+            print("-" * 30) # 加一条分割线让视觉更清晰
+        else:
+            # 精简模式：浓缩在一行，适合监控长时间运行的训练
+            print(f"  Iter {i+1:02d}/{max_iters} | Loss: {loss:.4f} | Grad Norm: {grad_norm:.4f} | Rank: {k_effective}")
+        # ========== 3. 判断提前终止条件 ==========
+        
+        # 条件 A: 损失降到目标值以下（通常为 0，代表所有惩罚项消失，修复成功）
+        if loss <= target_loss:
+            print(f"\n✅ 修复成功！Loss 已降至 {loss:.8f} (<= {target_loss})，所有失败区域均已满足条件。")
+            break
+
+        # 条件 B: 梯度范数过小（网络可能陷入局部最优，或者在正交空间内无法继续下降）
+        if grad_norm < grad_tol:
+            print(f"\n⚠️ 提前停止！梯度范数 ({grad_norm:.8f}) 过小 (< {grad_tol})，继续训练可能无明显收益。")
+            break
+
+    print(f"\n🎯 修复循环结束。共执行 {len(history)} 轮。最终 Loss: {history[-1]['loss']:.6f}")
+    # return history
+    return loss, grad_norm, k_effective
+
