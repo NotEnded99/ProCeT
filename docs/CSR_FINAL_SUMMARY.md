@@ -6,43 +6,7 @@
 
 ### 创建的文件：
 
-1. **[CSR_DETAILED_EXPLANATION.md](CSR_DETAILED_EXPLANATION.md)** - 详细解释文档
-   - 直观理解（房子和花园的比喻）
-   - 理论基础（完整数学推导）
-   - 具体实现步骤（伪代码+图示）
-   - 为什么这个方法有效
 
-2. **[lbp_neural_cbf/certified_subspace_repair.py](../lbp_neural_cbf/certified_subspace_repair.py)** - 完整的代码模块
-   - `CertificateDataCollector`: 收集A_L矩阵
-   - `SubspaceAnalyzer`: 子空间分解
-   - `SubspaceRepair`: 子空间约束修复
-   - 合成数据demo
-
-3. **[experiments/subspace_sanity_check.py](../experiments/subspace_sanity_check.py)** - 初步验证脚本
-   - 演示子空间结构确实存在
-
-4. **[experiments/csr_complete_example.py](../experiments/csr_complete_example.py)** - 完整端到端示例
-   - 演示整个CSR流程
-
-5. **[WHY_CSR_IS_BETTER.md](WHY_CSR_IS_BETTER.md)** - 与你原始idea的对比
-   - 为什么CSR更强、更有理论深度
-
-6. **[IDEA_REPORT_V2.md](IDEA_REPORT_V2.md)** - 完整研究报告
-   - 完整的论文结构
-   - 理论propositions
-   - 实验计划
-
----
-
-## CSR 方案 - 一句话总结
-
-**核心思想**：LBP验证给出的线性边界$A_L$有自然的子空间结构，我们可以：
-1. 分解出"失败子空间"和"已验证子空间"
-2. **只修改失败子空间**的权重
-3. **已验证子空间完全不动**
-4. **结果**：失败区域被修复，已验证区域**100%保持不变**（可证明！）
-
----
 
 ## 具体怎么操作？（三步）
 

@@ -102,6 +102,9 @@ class SigmoidActivationRelaxation(ActivationRelaxation):
             denom = torch.clamp(ub64 - lb64, min=1e-12)
             secant_values = (y_u - y_l) / denom
             secant_slope = torch.where(non_point_mask, secant_values, secant_slope)
+        # Clamp to physical Lipschitz bound: |d/dy[σ'(y)]| ≤ 1/6 for sigmoid'
+        # This prevents NaN from catastrophic cancellation in sqrt discriminant
+        secant_slope = torch.clamp(secant_slope, min=-1.0/6.0, max=1.0/6.0)
 
         x_inf = torch.as_tensor(self.x_inf_deriv, dtype=lb64.dtype, device=lb64.device)
 
@@ -266,7 +269,15 @@ class SigmoidActivationRelaxation(ActivationRelaxation):
             return (alpha_L.reshape(original_shape), beta_L.reshape(original_shape), alpha_U.reshape(original_shape), beta_U.reshape(original_shape))
 
         # Compute secant slope for non-zero intervals
-        secant_slope = torch.where(non_zero, (y_u - y_l) / torch.clamp(ub_flat - lb_flat, min=1e-12), torch.zeros_like(lb_flat))
+        # IMPORTANT: Clamp secant_slope to [0, 0.25] to prevent NaN from catastrophic
+        # cancellation when lb ≈ ub (degenerate simplices). When x1 ≈ x2,
+        # sigmoid(x2) - sigmoid(x1) suffers catastrophic cancellation, making
+        # secant_slope appear >> 0.25, which makes discriminant = 1 - 4*m < 0
+        # and sqrt(negative) = NaN. The true derivative of sigmoid is always in [0, 0.25].
+        secant_slope_raw = (y_u - y_l) / torch.clamp(ub_flat - lb_flat, min=1e-12)
+        secant_slope = torch.where(non_zero, secant_slope_raw, torch.zeros_like(lb_flat))
+        # Clamp to physical bounds of sigmoid derivative [0, 0.25]
+        secant_slope = torch.clamp(secant_slope, min=0.0, max=0.25)
 
         # === Define all masks upfront ===
         concave = non_zero & (lb_flat >= 0)  # Case A: Concave region (0 ≤ lb < ub)

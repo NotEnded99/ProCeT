@@ -230,6 +230,31 @@ class CrownPartialLinearization:
 
         return final_bounds["lb"][sample_idx].item(), final_bounds["ub"][sample_idx].item()
 
+    def get_network_output_bounds_with_grad(self, sample_idx=None):
+        """
+        返回网络输出边界，保留梯度追踪（用于修复算法的反向传播）。
+
+        与 get_network_output_bounds 的区别：
+        - sample_idx 为 None 时：直接返回存储的 tensor（已保留梯度）
+        - sample_idx 不为 None 时：返回切片后的 tensor（而非 .item() 的标量）
+
+        返回:
+            (h_lb, h_ub): 均为 torch.Tensor, requires_grad=True
+        """
+        if not self.forward_bounds:
+            raise ValueError("No network bounds computed. Call compute_network_bounds() first.")
+
+        final_layer_idx = len(self.fc_layers) - 1
+        final_bounds = self.forward_bounds[f"layer_{final_layer_idx}_pre_act_bounds"]
+
+        if sample_idx is None:
+            return final_bounds["lb"], final_bounds["ub"]
+
+        # 不使用 .item()，直接切片 tensor，clone 副本 + requires_grad_(True) 成为叶子节点
+        h_lb = final_bounds["lb"][sample_idx].clone().requires_grad_(True)
+        h_ub = final_bounds["ub"][sample_idx].clone().requires_grad_(True)
+        return h_lb, h_ub
+
     def get_network_linear_bounds(self, sample_idx=None):
         if not self.forward_bounds:
             raise ValueError("No network bounds computed. Call compute_network_bounds() first.")
@@ -268,12 +293,16 @@ class CrownPartialLinearization:
         L = len(self.fc_layers)
 
         A_L_running, b_L_running, A_U_running, b_U_running = self._get_jacobian_bounds_for_layer(L)
+        # DEBUG
+        # print(f"    DEBUG: After _get_jacobian_bounds_for_layer: A_L_running={A_L_running.shape}, b_L_running={b_L_running.shape}")
         A_L_running, b_L_running, A_U_running, b_U_running = (
             A_L_running.unsqueeze(0),
             b_L_running.unsqueeze(0),
             A_U_running.unsqueeze(0),
             b_U_running.unsqueeze(0),
         )  # Add batch dimension
+        # DEBUG
+        # print(f"    DEBUG: After unsqueeze: A_L_running={A_L_running.shape}, b_L_running={b_L_running.shape}")
 
         for i in range(L - 1, 0, -1):
             Lambda_L, lambda_L, Lambda_U, lambda_U = self._get_jacobian_bounds_for_layer(i)

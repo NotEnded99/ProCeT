@@ -190,6 +190,7 @@ def main(system_type="barr1", train=True, verify=False, alpha=1.0, region_type="
             use_wandb=False if performance_test else True,  # Enable wandb logging for verification phase
             use_gpu=True,   # Use GPU for faster verification
             batch_size=batch_size,
+            save_verification_regions = True,  # Save verification regions for later analysis
             **verification_params
         )
         

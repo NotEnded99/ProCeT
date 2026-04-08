@@ -86,6 +86,8 @@ def load_regions(regions_path, device='cpu'):
 
     # 提取验证通过率（来自 verify_cbf 直接保存的 certified_percentage）
     certified_percentage = data.get('Certified percentage', None)
+    if certified_percentage is  None:
+        certified_percentage = data.get('certified_percentage', None)
 
     return regions, certified_percentage
 
@@ -206,7 +208,7 @@ def plot_verification_regions(
     ])
     total = total_verified + total_failed
     # 直接使用 verify_cbf 保存的 certified_percentage
-    pass_rate = certified_percentage if certified_percentage is not None else (100 * total_verified / total if total > 0 else 0)
+    pass_rate = certified_percentage if certified_percentage is not None else 0
 
     if show_stats:
         stats_text = (
@@ -429,6 +431,13 @@ def main():
     )
 
     parser.add_argument(
+        '--name_out', '-n',
+        type=str,
+        default=None,
+        help='具体保存的名字'
+    )
+
+    parser.add_argument(
         '--regions-dir', '-d',
         type=str,
         default='New_repair/regions/figures',
@@ -543,7 +552,10 @@ def main():
         else:
             act = args.activation if args.activation else 'Unknown'
 
-        output_file = output_path / f'regions_{args.system}_{act}.png'
+        # output_file = output_path / f'regions_{args.system}_{act}.png'
+        # output_file = output_path / f'regions_{args.system}_{act}_repaired.png'
+        output_file = output_path / f'regions_{args.system}_{act}_{args.name_out}.png'
+
         print(f"输出路径: {output_file}")
 
         plot_type = 'failed_only' if args.failed_only else args.plot_type

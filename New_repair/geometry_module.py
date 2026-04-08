@@ -84,7 +84,7 @@ def _compute_lbp_bounds_flexible(
                 # Sigmoid 是单调递增的，值域在 [0, 1]
                 z_lb = torch.sigmoid(y_lb)
                 z_ub = torch.sigmoid(y_ub)
-            else:  # ReLU
+            elif act_type == 'ReLU':  # ReLU
                 inactive_mask = y_ub <= 0
                 active_mask = y_lb >= 0
                 unstable_mask = ~active_mask & ~inactive_mask
@@ -173,7 +173,7 @@ def _compute_jacobian_bounds(
                     sigma_ub = torch.sigmoid(act_ub)
                     S_L = sigma_lb * (1 - sigma_ub)
                     S_U = sigma_ub * (1 - sigma_lb)
-                else:  # ReLU
+                elif act_type == 'ReLU' :  # ReLU
                     S_L = torch.zeros_like(act_lb)
                     S_U = torch.ones_like(act_lb)
 
@@ -343,7 +343,7 @@ def compute_simplex_bound(
     if region_type == 'unsafe':
         # 返回 h_max（验证条件需要 h_max < 0）
         # 确保是标量
-        return h_ub.reshape(-1)
+        return h_lb.reshape(-1), h_ub.reshape(-1)
 
     elif region_type == 'safe':
         # 返回 CBF Lie 导数条件的下界 min_L

@@ -1,0 +1,73 @@
+{
+  "system": "barr3",
+  "activation": "Sigmoid",
+  "initial_pass_rate": 78.71093749999997,
+  "final_pass_rate": 83.39843749999997,
+  "improvement": 4.6875,
+  "num_iterations": 5,
+  "max_depth": 8,
+  "initial_regions": {
+    "V_safe": 198,
+    "V_unsafe": 18,
+    "F_h_positive_in_unsafe": 19,
+    "F_safe_cbf_violation": 0,
+    "F_depth_limit_reached": 3,
+    "F_unsafe_cannot_split": 0
+  },
+  "final_regions": {
+    "V_safe": 19,
+    "V_unsafe": 0,
+    "F_h_positive_in_unsafe": 19,
+    "F_safe_cbf_violation": 0,
+    "F_depth_limit_reached": 3,
+    "F_unsafe_cannot_split": 0
+  },
+  "iteration_results": [
+    {
+      "iteration": 1,
+      "loss": 3.665842056274414,
+      "certified_percentage": 80.07812499999997,
+      "f_h_positive": 25,
+      "f_safe_violation": 0,
+      "f_depth": 41,
+      "f_unsafe_split": 0
+    },
+    {
+      "iteration": 2,
+      "loss": 2.1376819610595703,
+      "certified_percentage": 82.22656249999997,
+      "f_h_positive": 25,
+      "f_safe_violation": 0,
+      "f_depth": 25,
+      "f_unsafe_split": 0
+    },
+    {
+      "iteration": 3,
+      "loss": 0.9136710166931152,
+      "certified_percentage": 79.49218749999997,
+      "f_h_positive": 24,
+      "f_safe_violation": 0,
+      "f_depth": 42,
+      "f_unsafe_split": 0
+    },
+    {
+      "iteration": 4,
+      "loss": 2.1198606491088867,
+      "certified_percentage": 71.87499999999997,
+      "f_h_positive": 22,
+      "f_safe_violation": 0,
+      "f_depth": 108,
+      "f_unsafe_split": 0
+    },
+    {
+      "iteration": 5,
+      "loss": 3.194532632827759,
+      "certified_percentage": 83.39843749999997,
+      "f_h_positive": 19,
+      "f_safe_violation": 0,
+      "f_depth": 3,
+      "f_unsafe_split": 0
+    }
+  ],
+  "timestamp": "2026-04-07 16:14:41"
+}
