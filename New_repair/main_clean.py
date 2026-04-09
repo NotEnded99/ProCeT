@@ -69,16 +69,6 @@ def pytorch_to_onnx(model, onnx_path, input_dim=2):
 
 
 def verify_model(model_path, dynamics_model, max_depth=13):
-    """
-    验证模型并返回验证结果。
-
-    Args:
-        model_path: ONNX 模型路径
-        dynamics_model: 动力学系统
-
-    Returns:
-        验证结果字典
-    """
     results = verify_cbf(
         dynamics_model,
         model_path,
@@ -235,43 +225,124 @@ def main():
         print(f"{'='*70}")
 
 
-        # 5.2 执行内循环 Mini-batch 修复
-        print(f"\n[迭代 {iteration+1}.1] 执行内循环 Mini-batch 修复...")
-
+        # 5.2 检查是否有需要修复的失败区域
         total_fail = len(F_h_positive_in_unsafe_init) + len(F_safe_cbf_violation_init) +\
                       len(F_depth_limit_reached_init) + len(F_unsafe_cannot_split_init)
 
-        print("total_fail", total_fail)
+        print(f"  失败区域总数: {total_fail}, V_safe: {len(V_safe_init)}, V_unsafe: {len(V_unsafe_init)}")
+
+        # 如果没有失败区域，说明所有区域都已验证通过，提前终止
         if total_fail == 0:
-            print("    没有需要修复的区域!")
-            loss = 0.0
+            print(f"\n  === 已经没有需要修复的失败区域！提前终止修复过程 ===")
+            certified_percentage = 100.0
+            stats = {
+                'total': 0,
+                'certified_pct': 100.0,
+                'uncertified_pct': 0.0,
+                'certified_percentage': 100.0
+            }
+
+            # 保存当前模型
+            pytorch_save_path = f"New_repair/regions/{dynamics_model.system_name}_{activation}_cbf_clean_repaired.pth"
+            torch.save(model.state_dict(), pytorch_save_path)
+            print(f"\n[迭代 {iteration+1}] 保存 PyTorch 模型: {pytorch_save_path}")
+
+            onnx_path = f"New_repair/regions/{dynamics_model.system_name}_{activation}_cbf_clean_repaired.onnx"
+            pytorch_to_onnx(model, onnx_path, input_dim=dynamics_model.input_dim)
+            print(f"[迭代 {iteration+1}] 转换为 ONNX: {onnx_path}")
+
+            # 保存验证结果
+            verified_regions_path = f"New_repair/regions/verified_regions_{dynamics_model.system_name}_{activation}_clean_repaired.pt"
+            regions_to_save = {
+                'V_safe': V_safe_init,
+                'V_unsafe': V_unsafe_init,
+                'F_h_positive_in_unsafe': F_h_positive_in_unsafe_init,
+                'F_safe_cbf_violation': F_safe_cbf_violation_init,
+                'F_depth_limit_reached': F_depth_limit_reached_init,
+                'F_unsafe_cannot_split': F_unsafe_cannot_split_init,
+                'certified_percentage': certified_percentage,
+                'stats': stats,
+                'iteration': iteration + 1
+            }
+            torch.save(regions_to_save, verified_regions_path)
+
+            iteration_results.append({
+                'iteration': iteration + 1,
+                'loss': 0.0,
+                'certified_percentage': certified_percentage,
+                'f_h_positive': 0,
+                'f_safe_violation': 0,
+                'f_depth': 0,
+                'f_unsafe_split': 0,
+            })
+
+            # 提前跳出外循环
+            # 补齐剩余迭代的占位记录
+            for rem_iter in range(iteration + 1, num_iterations):
+                iteration_results.append({
+                    'iteration': rem_iter + 1,
+                    'loss': 0.0,
+                    'certified_percentage': 100.0,
+                    'f_h_positive': 0,
+                    'f_safe_violation': 0,
+                    'f_depth': 0,
+                    'f_unsafe_split': 0,
+                })
+            print(f"\n  修复完成，提前终止（第 {iteration + 1} 次迭代时所有区域已验证通过）。")
+            print(f"  ★ 最终通过率: {certified_percentage:.2f}%")
+            # 跳到最终总结
+            break
+
+        # 执行内循环 Mini-batch 修复（组合损失函数版本）
+        print(f"\n[迭代 {iteration+1}.1] 执行内循环 Mini-batch 修复...")
+
+        # 内循环参数（组合损失函数）
+        num_inner_steps = 10        # 内循环迭代次数
+        batch_ratio = 0.2           # 失败区域采样比例
+        verified_batch_ratio = 1.0  # 已验证区域采样比例
+        lr = 1e-3
+        # 组合损失权重
+        lambda_penalty = 1.0    # 惩罚项权重
+        lambda_stability = 0.1  # 稳定性项权重（防止退化解）
+        lambda_barrier = 0.1    # 屏障强化项权重
+        gamma_safe = 0.1        # Lie 导数裕度
+        gamma_unsafe = 0.1      # 障碍区屏障裕度
+
+        inner_history = inner_loop_repair(
+            model=model,
+            F_h_positive_in_unsafe=F_h_positive_in_unsafe_init,
+            F_safe_cbf_violation=F_safe_cbf_violation_init,
+            F_depth_limit_reached=F_depth_limit_reached_init,
+            F_unsafe_cannot_split=F_unsafe_cannot_split_init,
+            dynamics_model=dynamics_model,
+            translator=translator,
+            num_inner_steps=num_inner_steps,
+            batch_ratio=batch_ratio,
+            lr=lr,
+            verbose=True,
+            seed=42 + iteration,
+            # 新增: 已验证区域 + 组合损失参数
+            V_safe=V_safe_init,
+            V_unsafe=V_unsafe_init,
+            lambda_penalty=lambda_penalty,
+            lambda_stability=lambda_stability,
+            lambda_barrier=lambda_barrier,
+            gamma_safe=gamma_safe,
+            gamma_unsafe=gamma_unsafe,
+            verified_batch_ratio=verified_batch_ratio,
+        )
+
+        # 取内循环最后一次的 loss 作为本轮指标
+        if inner_history:
+            last = inner_history[-1]
+            loss = last['loss']
+            lp = last.get('L_penalty', 0)
+            ls = last.get('L_stability', 0)
+            lb = last.get('L_barrier', 0)
+            print(f"    内循环完成: {len(inner_history)} 步, "
+                  f"loss={loss:.6f} (L_pen={lp:.4f}, L_stab={ls:.4f}, L_barr={lb:.4f})")
         else:
-            # 内循环参数
-            num_inner_steps = 10   # 内循环迭代次数
-            batch_ratio = 0.2      # 每次采样比例
-            lr = 1e-3
-
-            inner_history = inner_loop_repair(
-                model=model,
-                F_h_positive_in_unsafe=F_h_positive_in_unsafe_init,
-                F_safe_cbf_violation=F_safe_cbf_violation_init,
-                F_depth_limit_reached=F_depth_limit_reached_init,
-                F_unsafe_cannot_split=F_unsafe_cannot_split_init,
-                dynamics_model=dynamics_model,
-                translator=translator,
-                num_inner_steps=num_inner_steps,
-                batch_ratio=batch_ratio,
-                lr=lr,
-                verbose=True,
-                seed=42 + iteration,  # 每次外迭代用不同种子，保证可复现
-            )
-
-            # 取内循环最后一次的 loss 作为本轮指标
-            if inner_history:
-                loss = inner_history[-1]['loss']
-                print(f"    内循环完成: {len(inner_history)} 步, 最终 loss={loss:.6f}")
-            else:
-                loss = 0.0
+            loss = 0.0
 
 
         # 5.3 保存 PyTorch 模型

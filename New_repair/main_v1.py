@@ -8,8 +8,8 @@ import random
 import argparse
 import numpy as np
 import torch
+from datetime import datetime
 
-# 添加项目根目录到路径
 project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
@@ -27,7 +27,7 @@ from lbp_neural_cbf.cbf.verify_cbf import verify_cbf
 from lbp_neural_cbf.translators import TorchTranslator
 
 from New_repair.geometry_module_new import compute_jacobian_matrix
-from New_repair.optimizer_module import repair_new_iteration
+from New_repair.optimizer_module import repair_new_iteration, inner_loop_repair_with_qp
 
 # 支持的动力学系统映射
 DYNAMICS_SYSTEMS = {
@@ -79,22 +79,19 @@ def verify_model(model_path, dynamics_model, max_depth=13):
 
 
 def calculate_pass_rate(results):
-
-    # 从 verify_cbf 结果中提取信息
     certified_pct = results.get('certified_percentage', 0.0)
     uncertified_pct = results.get('uncertified_percentage', 0.0)
     total_samples = results.get('total_samples', 0)
-    # 通过率 = certified_percentage
-    pass_rate = certified_pct
 
+    certified_percentage = certified_pct
     stats = {
         'total': total_samples,
         'certified_pct': certified_pct,
         'uncertified_pct': uncertified_pct,
-        'pass_rate': pass_rate
+        'certified_percentage': certified_percentage
     }
 
-    return pass_rate, stats
+    return certified_percentage, stats
 
 
 def main():
@@ -126,8 +123,8 @@ def main():
     print(f"Neural CBF 迭代修复演示  [激活={activation}, 系统={system_name_key}]")
     print("=" * 70)
 
-    num_iterations = 5
-    max_depth = 8
+    num_iterations = 10
+    max_depth = 10
 
     # ========== 1. 加载动力学系统 ==========
     dynamics_class = DYNAMICS_SYSTEMS[system_name_key]
@@ -221,50 +218,144 @@ def main():
         print(f"迭代 {iteration + 1}/{num_iterations}")
         print(f"{'='*70}")
 
-        # 5.1 计算雅可比矩阵
-        print(f"\n[迭代 {iteration+1}.1] 计算雅可比矩阵...")
-
-        J = compute_jacobian_matrix(
-            model,
-            V_safe_init,
-            V_unsafe_init,
-            dynamics_model=dynamics_model,
-            translator=translator
-        )
-
-        print(f"    J 形状: {J.shape}")
-
-        # 5.2 执行修复迭代
-        print(f"\n[迭代 {iteration+1}.2] 执行修复迭代...")
-
         total_fail = (len(F_h_positive_in_unsafe_init) + len(F_safe_cbf_violation_init) +
                       len(F_depth_limit_reached_init) + len(F_unsafe_cannot_split_init))
 
+        print(f"  失败区域总数: {total_fail}, V_safe: {len(V_safe_init)}, V_unsafe: {len(V_unsafe_init)}")
+
+        # 如果没有失败区域，说明所有区域都已验证通过，提前终止
         if total_fail == 0:
-            print("    没有需要修复的区域!")
-            loss = 0.0
-            update_norm = 0.0
-            k_effective = 0
+            print(f"\n  === 已经没有需要修复的失败区域！提前终止修复过程 ===")
+            certified_percentage = 100.0
+            stats = {
+                'total': 0,
+                'certified_pct': 100.0,
+                'uncertified_pct': 0.0,
+                'certified_percentage': 100.0
+            }
+
+            # 保存当前模型
+            pytorch_save_path = f"New_repair/regions/{dynamics_model.system_name}_{activation}_cbf_repaired2.pth"
+            torch.save(model.state_dict(), pytorch_save_path)
+            print(f"\n[迭代 {iteration+1}] 保存 PyTorch 模型: {pytorch_save_path}")
+
+            onnx_path = f"New_repair/regions/{dynamics_model.system_name}_{activation}_cbf_repaired2.onnx"
+            pytorch_to_onnx(model, onnx_path, input_dim=dynamics_model.input_dim)
+            print(f"[迭代 {iteration+1}] 转换为 ONNX: {onnx_path}")
+
+            # 保存验证结果
+            verified_regions_path = f"New_repair/regions/verified_regions_{dynamics_model.system_name}_{activation}_repaired2.pt"
+            regions_to_save = {
+                'V_safe': V_safe_init,
+                'V_unsafe': V_unsafe_init,
+                'F_h_positive_in_unsafe': F_h_positive_in_unsafe_init,
+                'F_safe_cbf_violation': F_safe_cbf_violation_init,
+                'F_depth_limit_reached': F_depth_limit_reached_init,
+                'F_unsafe_cannot_split': F_unsafe_cannot_split_init,
+                'Certified percentage': certified_percentage,
+                'stats': stats,
+                'iteration': iteration + 1
+            }
+            torch.save(regions_to_save, verified_regions_path)
+            print(f"[迭代 {iteration+1}] 保存验证区域: {verified_regions_path}")
+
+            iteration_results.append({
+                'iteration': iteration + 1,
+                'loss': 0.0,
+                'update_norm': 0.0,
+                'certified_percentage': certified_percentage,
+                'f_h_positive': 0,
+                'f_safe_violation': 0,
+                'f_depth': 0,
+                'f_unsafe_split': 0,
+            })
+
+            # 补齐剩余迭代的占位记录
+            for rem_iter in range(iteration + 1, num_iterations):
+                iteration_results.append({
+                    'iteration': rem_iter + 1,
+                    'loss': 0.0,
+                    'update_norm': 0.0,
+                    'certified_percentage': 100.0,
+                    'f_h_positive': 0,
+                    'f_safe_violation': 0,
+                    'f_depth': 0,
+                    'f_unsafe_split': 0,
+                })
+            print(f"\n  修复完成，提前终止（第 {iteration + 1} 次迭代时所有区域已验证通过）。")
+            print(f"  ★ 最终通过率: {certified_percentage:.2f}%")
+            break
         else:
-            loss, update_norm, active_constraints = repair_new_iteration(
+
+            # 5.1 计算雅可比矩阵
+            print(f"\n[迭代 {iteration+1}.1] 计算雅可比矩阵...")
+
+            J = compute_jacobian_matrix(
                 model,
-                J,
-                F_h_positive_in_unsafe_init,
-                F_safe_cbf_violation_init,
-                F_depth_limit_reached_init,
-                F_unsafe_cannot_split_init,
-                dynamics_model,
-                translator,
-                # k_rank=500,  <-- 删掉！QP 不需要截断维度
-                # alpha=0.0,   <-- 删掉！QP 自动寻找最优投影，不需要混合系数
-                lr=1e-2,       # ⚠️ 极其重要：把原来的 1e-1 改小！建议先从 1e-3 或 1e-4 开始
-                tolerance=-1e-12,
-                verbose=False
+                V_safe_init,
+                V_unsafe_init,
+                dynamics_model=dynamics_model,
+                translator=translator
             )
 
-            print(f"    损失 (Loss): {loss:.4f}")
-            print(f"    更新步长 (|d|): {update_norm:.4f}")
-            print(f"    活跃约束 (阻挡更新的区域数): {active_constraints}")
+            print(f" J 形状: {J.shape}")
+
+            # 5.2 执行修复迭代
+            print(f"\n[迭代 {iteration+1}.2] 执行修复迭代...")
+
+            inner_history = inner_loop_repair_with_qp(
+                    model=model,
+                    J=J,                         # 外层传入的 J
+                    F_h_positive_in_unsafe=F_h_positive_in_unsafe_init,
+                    F_safe_cbf_violation=F_safe_cbf_violation_init,
+                    F_depth_limit_reached=F_depth_limit_reached_init,
+                    F_unsafe_cannot_split=F_unsafe_cannot_split_init,
+                    dynamics_model=dynamics_model,
+                    translator=translator,
+                    num_inner_steps=10,
+                    batch_ratio=0.2,
+                    lr=1e-3,
+                    V_safe=V_safe_init,
+                    V_unsafe=V_unsafe_init,
+                    lambda_penalty=1.0,
+                    lambda_stability=0.1,
+                    lambda_barrier=0.1,
+                    gamma_safe=0.1,
+                    gamma_unsafe=0.1,
+                    verified_batch_ratio=1.0,
+                    verbose=True,
+                    seed=42 + iteration,
+                )
+            
+            # loss, update_norm, active_constraints = repair_new_iteration(
+            #     model,
+            #     J,
+            #     F_h_positive_in_unsafe_init,
+            #     F_safe_cbf_violation_init,
+            #     F_depth_limit_reached_init,
+            #     F_unsafe_cannot_split_init,
+            #     dynamics_model,
+            #     translator,
+            #     lr=1e-3,       
+            #     tolerance=-1e-12,
+            #     verbose=False
+            # )
+            if inner_history:
+                last = inner_history[-1]
+                loss = last['loss']
+                update_norm = last.get('update_norm', 0.0)
+                lp = last.get('L_penalty', 0)
+                ls = last.get('L_stability', 0)
+                lb = last.get('L_barrier', 0)
+                print(f"    内循环完成: {len(inner_history)} 步, "
+                    f"loss={loss:.6f} (L_pen={lp:.4f}, L_stab={ls:.4f}, L_barr={lb:.4f})")
+            else:
+                loss = 0.0
+                update_norm = 0.0
+        
+            # print(f"    损失 (Loss): {loss:.4f}")
+            # print(f"    更新步长 (|d|): {update_norm:.4f}")
+            # print(f"    活跃约束 (阻挡更新的区域数): {active_constraints}")
 
         # 5.3 保存 PyTorch 模型
         pytorch_save_path = f"New_repair/regions/{dynamics_model.system_name}_{activation}_cbf_repaired2.pth"
@@ -280,17 +371,15 @@ def main():
         print(f"\n[迭代 {iteration+1}.5] 运行验证...")
         results = verify_model(onnx_path, dynamics_model, max_depth=max_depth)
 
-
         
-
         # 5.6 计算通过率
-        pass_rate, stats = calculate_pass_rate(results)
+        certified_percentage, stats = calculate_pass_rate(results)
 
         print(f"\n[迭代 {iteration+1}.6] 验证结果:")
         print(f"    总样本数: {stats['total']}")
         print(f"    Certified: {stats['certified_pct']:.2f}%")
         print(f"    Uncertified: {stats['uncertified_pct']:.2f}%")
-        print(f"    ★ 通过率 (Certified): {pass_rate:.2f}%")
+        print(f"    ★ 通过率 (Certified): {certified_percentage:.2f}%")
 
         # 5.7 保存验证结果
         verified_regions_path = f"New_repair/regions/verified_regions_{dynamics_model.system_name}_{activation}_repaired2.pt"
@@ -306,8 +395,7 @@ def main():
             'F_safe_cbf_violation': results.get('F_safe_cbf_violation', F_safe_cbf_violation_init),
             'F_depth_limit_reached': results.get('F_depth_limit_reached', F_depth_limit_reached_init),
             'F_unsafe_cannot_split': results.get('F_unsafe_cannot_split', F_unsafe_cannot_split_init),
-            'Certified percentage': pass_rate,
-            'pass_rate': pass_rate,
+            'Certified percentage': certified_percentage,
             'stats': stats,
             'iteration': iteration + 1
         }
@@ -322,7 +410,6 @@ def main():
         
         V_safe_init = updated_data['V_safe']
         V_unsafe_init = updated_data['V_unsafe']
-
         F_h_positive_in_unsafe_init = updated_data['F_h_positive_in_unsafe']
         F_safe_cbf_violation_init = updated_data['F_safe_cbf_violation']
         F_depth_limit_reached_init = updated_data['F_depth_limit_reached']
@@ -339,7 +426,7 @@ def main():
             'iteration': iteration + 1,
             'loss': loss,
             'update_norm': update_norm,
-            'pass_rate': stats['certified_pct'],
+            'certified_percentage': stats['certified_percentage'],
             'f_h_positive': len(F_h_positive_in_unsafe_init),
             'f_safe_violation': len(F_safe_cbf_violation_init),
             'f_depth': len(F_depth_limit_reached_init),
@@ -356,12 +443,12 @@ def main():
     print(f"│ {'迭代':^6} │ {'损失':^13} │ {'梯度范数':^13} │ {'通过率':^10} │")
     print(f"├{'─'*8}┼{'─'*15}┼{'─'*15}┼{'─'*8}┼{'─'*12}┤")
     for r in iteration_results:
-        print(f"│ {r['iteration']:^6} │ {r['loss']:>13.2f} │ {r['update_norm']:>13.2f} │ {r['pass_rate']:>10.2f}% │")
+        print(f"│ {r['iteration']:^6} │ {r['loss']:>13.2f} │ {r['update_norm']:>13.2f} │ {r['certified_percentage']:>10.2f}% │")
     print(f"└{'─'*8}┴{'─'*15}┴{'─'*15}┴{'─'*8}┴{'─'*12}┘")
 
     # 分析趋势
     model_initial_rate = initial_pass_rate
-    final_rate = iteration_results[-1]['pass_rate']
+    final_rate = iteration_results[-1]['certified_percentage']
     improvement = final_rate - model_initial_rate
 
     print(f"\n模型初始通过率: {model_initial_rate:.2f}%")
@@ -374,6 +461,46 @@ def main():
         print("✗ 修复效果负向：通过率下降")
     else:
         print("- 修复效果持平")
+
+    # ========== 7. 保存单次运行结果到 nr_results_clean/ ==========
+    import json
+    results_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "nr_results_v1")
+    os.makedirs(results_dir, exist_ok=True)
+
+    # 保存为 JSON（便于后续读取汇总）
+    run_result = {
+        'system': system_name_key,
+        'activation': activation,
+        'initial_pass_rate': model_initial_rate,
+        'final_pass_rate': final_rate,
+        'improvement': improvement,
+        'num_iterations': num_iterations,
+        'max_depth': max_depth,
+        'initial_regions': {
+            'V_safe': len(V_safe_init) if 'V_safe_init' in dir() else 0,
+            'V_unsafe': len(V_unsafe_init) if 'V_unsafe_init' in dir() else 0,
+            'F_h_positive_in_unsafe': len(F_h_positive_in_unsafe_init),
+            'F_safe_cbf_violation': len(F_safe_cbf_violation_init),
+            'F_depth_limit_reached': len(F_depth_limit_reached_init),
+            'F_unsafe_cannot_split': len(F_unsafe_cannot_split_init),
+        },
+        'final_regions': {
+            'V_safe': iteration_results[-1].get('f_h_positive', 0),
+            'V_unsafe': iteration_results[-1].get('f_safe_violation', 0),
+            'F_h_positive_in_unsafe': iteration_results[-1].get('f_h_positive', 0),
+            'F_safe_cbf_violation': iteration_results[-1].get('f_safe_violation', 0),
+            'F_depth_limit_reached': iteration_results[-1].get('f_depth', 0),
+            'F_unsafe_cannot_split': iteration_results[-1].get('f_unsafe_split', 0),
+        },
+        'iteration_results': iteration_results,
+        'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+    }
+
+    result_file = os.path.join(results_dir, f"result_{system_name_key}_{activation}.json")
+    with open(result_file, 'w', encoding='utf-8') as f:
+        json.dump(run_result, f, indent=2, ensure_ascii=False)
+
+    print(f"\n[7] 单次结果已保存: {result_file}")
 
     print("\n" + "=" * 70)
     print("演示结束")

@@ -701,7 +701,11 @@ def _verify_cbf_condition_affine(batch, dynamics_model, network_linearizer, devi
     # 1. Get Jacobian J(x) affine bounds from linear bound propagation (as PyTorch tensors)
     # Get all partial derivatives at once for output 0 (barrier function)
     A_L, b_L, A_U, b_U = network_linearizer.get_partial_derivative_bounds()
+    # print(f"DEBUG A_L shape: {A_L.shape}, b_L shape: {b_L.shape}, A_U shape: {A_U.shape}, b_U shape: {b_U.shape}")
+    # DEBUG A_L shape: torch.Size([106, 2, 2]), b_L shape: torch.Size([106, 2]), A_U shape: torch.Size([106, 2, 2]), b_U shape: torch.Size([106, 2])
     J_affine_L, J_affine_U = (A_L, b_L), (A_U, b_U)
+
+    
 
     # 2. Get Dynamics f(x) and g(x) affine bounds using Taylor linearization (as NumPy arrays)
     f_affine_L, f_affine_U = f_affine_bounds
@@ -718,11 +722,17 @@ def _verify_cbf_condition_affine(batch, dynamics_model, network_linearizer, devi
         device=device,
         dtype=dtype,
     )
+
+    # print(f"DEBUG M_D shape: {M_D.shape}, c_D shape: {c_D.shape}")
+    # torch.Size([11, 2, 2]), c_D shape: torch.Size([11, 2])
+
     M_D, c_D = M_D.sum(dim=-2), c_D.sum(dim=-1)  # Sum over all state dimensions
 
     # 5. Compute Lower Bound for Class-K Term using already-computed barrier bounds
     # Extract h_min from the network bounds (already computed by compute_partial_derivative_bounds)
     (A_L, a_L), _ = network_linearizer.get_network_linear_bounds()
+    # print(f"DEBUG A_L shape: {A_L.shape}, a_L shape: {a_L.shape}")
+    # DEBUG A_L shape: torch.Size([23, 1, 2]), a_L shape: torch.Size([23, 1])
     alpha_A_L = dynamics_model.alpha_function(A_L[..., 0, :])
     alpha_a_L = dynamics_model.alpha_function(a_L[..., 0])
 
@@ -792,6 +802,11 @@ def _verify_cbf_condition_affine(batch, dynamics_model, network_linearizer, devi
             # 6. Final affine lower bound
             M_total[sample_idx] += M_C
             c_total[sample_idx] += c_C
+
+    #     print(f"DEBUG M_total.unsqueeze(1) shape: {M_total.unsqueeze(1).shape}")
+    #     print(f"DEBUG c_total.unsqueeze(1) shape: {c_total.unsqueeze(1).shape}")
+    # DEBUG M_total.unsqueeze(1) shape: torch.Size([23, 1, 2])
+    # DEBUG c_total.unsqueeze(1) shape: torch.Size([23, 1])
 
     # 7. Find minimum over the hyper-rectangle
     min_L, _ = _batched_get_affine_function_bounds((M_total.unsqueeze(1), c_total.unsqueeze(1)), batch, device=device, dtype=dtype)
@@ -991,7 +1006,7 @@ def _batched_compute_mccormick_product_lower_bound(affine1_L, affine1_U, affine2
     (A1_L, b1_L), (A1_U, b1_U) = affine1_L, affine1_U
     (A2_L, b2_L), (A2_U, b2_U) = affine2_L, affine2_U
 
-    # # DEBUG
+    # DEBUG
     # print(f"  DEBUG McCormick: A1_L={A1_L.shape}, b1_L={b1_L.shape}")
     # print(f"  DEBUG McCormick: A2_L={A2_L.shape}, b2_L={b2_L.shape}")
     # print(f"  DEBUG McCormick: y1_min={y1_min.shape}, y2_min={y2_min.shape}, y2_min.ndim={y2_min.ndim}")
@@ -1049,6 +1064,7 @@ def _batched_compute_mccormick_product_upper_bound(affine1_L, affine1_U, affine2
 def _batched_get_affine_function_bounds(affine_L, batch, affine_U=None, device="cpu", dtype=torch.float64):
     """Computes min/max of a Torch affine function over a region (hyperrectangular or simplicial)."""
     (A, b) = affine_L
+    # print(f"  DEBUG get_affine: A={A.shape}, b={b.shape}")
 
     if isinstance(batch[0], HyperrectangularRegion):
         # For hyperrectangular regions, use center and radius
@@ -1112,6 +1128,7 @@ def _compute_dynamics_bounds_taylor(batch, dynamics_model, device="cpu", dtype=t
 
     f_linearization = taylor_linearizer.linearize_sample(batch)
     (A_L, b_L), (A_U, b_U), _ = f_linearization.first_order_model
+    # print(f"  DEBUG Taylor f: A_L={A_L.shape}, b_L={b_L.shape}, A_U={A_U.shape}, b_U={b_U.shape}")
     f_affine_bounds = (A_L, b_L), (A_U, b_U)
 
     g_affine_bounds = None

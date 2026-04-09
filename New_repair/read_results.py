@@ -8,7 +8,7 @@ import json
 import glob
 
 # 所有系统和激活函数组合
-DYNAMICS_SYSTEMS = ['simple_2d', 'barr1', 'barr2', 'barr3', 'barr4']
+DYNAMICS_SYSTEMS = ['simple_2d', 'barr1', 'barr2', 'barr3']
 ACTIVATIONS = ['Relu', 'Tanh', 'Sigmoid']
 
 
@@ -151,7 +151,7 @@ def save_summary_json(headers, rows, output_path):
 def main():
     # 获取当前脚本所在目录
     script_dir = os.path.dirname(os.path.abspath(__file__))
-    results_dir = os.path.join(script_dir, "nr_results_clean")
+    results_dir = os.path.join(script_dir, "nr_results_v1")
 
     if not os.path.exists(results_dir):
         print(f"目录不存在: {results_dir}")

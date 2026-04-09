@@ -344,6 +344,8 @@ class CrownPartialLinearization:
             "A_U": A_U,
             "b_U": b_U,
         }
+        # DEBUG
+        # print(f"    DEBUG get_partial_deriv: A_L={A_L.shape}, b_L={b_L.shape}")
 
     def _get_jacobian_bounds_for_layer(self, i):
         W_i = self.fc_layers[i - 1].weight

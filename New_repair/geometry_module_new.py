@@ -125,8 +125,12 @@ def _extract_lie_derivative_lower_bound(
 
     # 1. 获取 Jacobian 界
     A_L, b_L, A_U, b_U = network_linearizer.get_partial_derivative_bounds()
-    if torch.isnan(A_L).any() or torch.isnan(b_L).any():
-        print("DEBUG NaN: A_L or b_L has NaN!")
+
+    # print(f"DEBUG Jacobian bounds shapes: A_L={A_L.shape}, b_L={b_L.shape}, A_U={A_U.shape}, b_U={b_U.shape}")
+    A_L = A_L.squeeze(1)  # [B, 1, n, n] -> [B, n, n]
+    b_L = b_L.squeeze(1)  # [B, 1, n] -> [B, n]
+    A_U = A_U.squeeze(1)
+    b_U = b_U.squeeze(1)
     J_affine_L, J_affine_U = (A_L, b_L), (A_U, b_U)
 
     # 2. Dynamics 界
@@ -146,21 +150,20 @@ def _extract_lie_derivative_lower_bound(
         device=device,
         dtype=dtype,
     )
+
     if torch.isnan(M_D).any() or torch.isnan(c_D).any():
         print("DEBUG NaN: M_D or c_D has NaN after McCormick!")
     M_D, c_D = M_D.sum(dim=-2), c_D.sum(dim=-1)  # Sum over state dims
 
     # 5. Class-K 项：alpha(h(x)) = alpha * h(x)
     (A_L_net, a_L_net), (A_U_net, a_U_net) = network_linearizer.get_network_linear_bounds()
-    alpha_A_L = dynamics_model.alpha_function(A_L_net[..., 0, :])
-    alpha_a_L = dynamics_model.alpha_function(a_L_net[..., 0])
+    A_L_net = A_L_net.squeeze(1)  # [B, 1, n] -> [B, n]
+    a_L_net = a_L_net.squeeze(1)  # [B, 1] -> [B]
+    alpha_A_L = dynamics_model.alpha_function(A_L_net)
+    alpha_a_L = dynamics_model.alpha_function(a_L_net)
 
-    # DEBUG: print shapes
-    # print(f"DEBUG M_D shape: {M_D.shape}, c_D shape: {c_D.shape}")
-    # print(f"DEBUG alpha_A_L shape: {alpha_A_L.shape}, alpha_a_L shape: {alpha_a_L.shape}")
     M_total = M_D + alpha_A_L
     c_total = c_D + alpha_a_L
-    # print(f"DEBUG M_total shape: {M_total.shape}, c_total shape: {c_total.shape}")
 
     # 控制项
     if m > 0 and g_affine_bounds is not None:
@@ -232,12 +235,15 @@ def _extract_lie_derivative_lower_bound(
     # 7. 在单纯形上求最小值
     # print(f"DEBUG M_total.unsqueeze(1) shape: {M_total.unsqueeze(1).shape}")
     # print(f"DEBUG c_total.unsqueeze(1) shape: {c_total.unsqueeze(1).shape}")
+
+    # print( )
     min_L, _ = _batched_get_affine_function_bounds(
         (M_total.unsqueeze(1), c_total.unsqueeze(1)),
         batch,
         device=device,
         dtype=dtype,
     )
+
     # print(f"DEBUG min_L shape before squeeze: {min_L.shape}")
     min_L = min_L.squeeze(-1)
     # print(f"DEBUG min_L shape after squeeze: {min_L.shape}")
@@ -336,6 +342,90 @@ def compute_simplex_bound(
         return min_L.reshape(-1)
 
     raise ValueError(f"Invalid region_type: {region_type}. Must be 'unsafe' or 'safe'")
+
+
+def compute_simplex_bound_batch(
+    model: nn.Module,
+    vertices_list: List[Union[torch.Tensor, np.ndarray]],
+    region_type: str,
+    dynamics_model=None,
+    translator=None
+):
+    """
+    批量版 compute_simplex_bound：将多个单纯形区域打包成 batch，一次前向传播完成所有计算。
+    大幅减少 CrownPartialLinearization 的创建次数，提升计算效率。
+
+    Args:
+        model: 神经网络
+        vertices_list: 单纯形顶点列表，每个元素形状 [D+1, D]，长度 B
+        region_type: 'unsafe' 或 'safe'
+        dynamics_model: 动力学系统（safe 区域需要）
+        translator: TorchTranslator（safe 区域需要）
+
+    Returns:
+        - unsafe: (h_lb_all, h_ub_all) 元组，每个形状 [B]
+        - safe: min_L_all 张量，形状 [B]
+    """
+    device = next(model.parameters()).device
+    dtype = next(model.parameters()).dtype
+
+    # ---------- 构建 batch ----------
+    batch = []
+    for verts in vertices_list:
+        if isinstance(verts, torch.Tensor):
+            verts_np = verts.cpu().numpy()
+        else:
+            verts_np = verts
+        
+        # print(verts_np)
+        batch.append(SimplicialRegion(verts_np, output_dim=None))
+
+    B = len(batch)
+
+    # print(len(batch), )
+
+
+    # ---------- 创建 CrownPartialLinearization（只创建一次）----------
+    network_linearizer = CrownPartialLinearization(model, dtype=dtype)
+    network_linearizer.compute_network_bounds(batch)
+    network_linearizer.compute_partial_derivative_bounds(input_idx=None, output_idx=None)
+
+    # ---------- unsafe: 网络输出界 ----------
+    if region_type == 'unsafe':
+        # sample_idx=None 返回完整 batch tensor，不需要 clone
+        h_lb_all, h_ub_all = network_linearizer.get_network_output_bounds_with_grad(sample_idx=None)
+        # 形状 [B, ...]，取第一维
+        return h_lb_all.reshape(B, -1)[:, 0], h_ub_all.reshape(B, -1)[:, 0]
+
+    # ---------- safe: CBF 李导数下界 ----------
+    if region_type == 'safe':
+        if dynamics_model is None:
+            raise ValueError("dynamics_model is required for 'safe' region type")
+
+        try:
+            f_affine_bounds, g_affine_bounds = _compute_dynamics_bounds_taylor(
+                batch, dynamics_model, device=device, dtype=dtype
+            )
+
+
+        except ValueError:
+            raise ValueError("Failed to compute dynamics bounds for this batch")
+
+        min_L = _extract_lie_derivative_lower_bound(
+            network_linearizer=network_linearizer,
+            dynamics_bounds=f_affine_bounds,
+            g_dynamics_bounds=g_affine_bounds,
+            batch=batch,
+            dynamics_model=dynamics_model,
+            device=device,
+            dtype=dtype,
+        )
+        # print(min_L.shape, B)
+        # min_L 形状 [B]
+        return min_L.reshape(B)
+
+    raise ValueError(f"Invalid region_type: {region_type}. Must be 'unsafe' or 'safe'")
+
 
 
 def _extract_layer_params(model: nn.Module) -> Tuple[List[nn.Linear], List[str], dict]:

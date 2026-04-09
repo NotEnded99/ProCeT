@@ -4,30 +4,38 @@
 for sys in simple2d barr1 barr2 barr3 barr4; do     python3 experiments/barrier_certificate.py --system-type $sys --train --activation Relu --hidden-sizes '32,64,32' --save-path '/data/mzm/mzm_Verification/verification-of-neural-cbf-mzm4/data/New_models_Hard_Relu'; done
 
 # 验证
-for sys in simple2d barr1 barr2 barr3 barr4; do     python3 experiments/barrier_certificate.py --system-type $sys --verify --activation Tanh --max-depth 8 --hidden-sizes '32,64,32'; done 
+for sys in simple2d barr1 barr2 barr3 barr4; do     python3 experiments/barrier_certificate.py --system-type $sys --verify --activation Tanh --max-depth 10 --hidden-sizes '32,64,32'; done 
 
-for sys in simple2d barr1 barr2 barr3 barr4; do     python3 experiments/barrier_certificate.py --system-type $sys --verify --activation Sigmoid --max-depth 8 --hidden-sizes '32,64,32'; done 
-
-
-for sys in simple2d barr1 barr2 barr3 barr4; do     python3 experiments/barrier_certificate.py --system-type $sys --verify --activation Relu --max-depth 8 --hidden-sizes '32,64,32'; done 
+for sys in simple2d barr1 barr2 barr3 barr4; do     python3 experiments/barrier_certificate.py --system-type $sys --verify --activation Sigmoid --max-depth 10 --hidden-sizes '32,64,32'; done 
 
 
+for sys in simple2d barr1 barr2 barr3 barr4; do     python3 experiments/barrier_certificate.py --system-type $sys --verify --activation Relu --max-depth 10 --hidden-sizes '32,64,32'; done 
 
-python3 experiments/barrier_certificate.py --system-type simple2d --verify --activation Tanh --max-depth 8 --hidden-sizes '32,64,32'
+
+
+python3 experiments/barrier_certificate.py --system-type simple2d --verify --activation Tanh --max-depth 10 --hidden-sizes '32,64,32'
 
 
 
 # 例如用 bash 循环
 
 python3 New_repair/main_clean.py --activation Sigmoid --system barr3
+
+python3 New_repair/main_v1.py --activation Sigmoid --system barr3
+
+
 python3 New_repair/main_clean.py --activation Tanh --system simple_2d
 
-for sys in simple_2d barr1 barr2 barr3 barr4; do
+for sys in simple_2d barr1 barr2 barr3; do
   for act in Relu Tanh Sigmoid; do
-    python3 New_repair/main_clean.py --activation $act --system $sys
+    python3 New_repair/main_v1.py --activation $act --system $sys
   done
 done
 
+
+
+
+python3 New_repair/main_v1.py --activation Tanh --system simple_2d
 # 生成最终的表格
 python3 New_repair/read_results.py
 
@@ -78,7 +86,7 @@ python3 New_repair/main_multi.py -a Tanh
 python3 New_repair/main.py --activation Sigmoid --system barr3
 
 
-
+你帮我看一下 这段代码为什么会出现nan python3 New_repair/main_v1.py --activation Tanh --system barr3，而相同的代码，在relu激活函数下就没问题，这是为什么，帮我找到问题，当时先不要该我的代码。你可以写debug代码
 
 
 main_v1.py 命令行参数

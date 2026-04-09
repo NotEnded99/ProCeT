@@ -2,16 +2,16 @@
   "system": "barr3",
   "activation": "Sigmoid",
   "initial_pass_rate": 78.71093749999997,
-  "final_pass_rate": 83.39843749999997,
-  "improvement": 4.6875,
-  "num_iterations": 5,
+  "final_pass_rate": 82.61718749999997,
+  "improvement": 3.90625,
+  "num_iterations": 10,
   "max_depth": 8,
   "initial_regions": {
-    "V_safe": 198,
-    "V_unsafe": 18,
+    "V_safe": 197,
+    "V_unsafe": 22,
     "F_h_positive_in_unsafe": 19,
     "F_safe_cbf_violation": 0,
-    "F_depth_limit_reached": 3,
+    "F_depth_limit_reached": 6,
     "F_unsafe_cannot_split": 0
   },
   "final_regions": {
@@ -19,55 +19,110 @@
     "V_unsafe": 0,
     "F_h_positive_in_unsafe": 19,
     "F_safe_cbf_violation": 0,
-    "F_depth_limit_reached": 3,
+    "F_depth_limit_reached": 6,
     "F_unsafe_cannot_split": 0
   },
   "iteration_results": [
     {
       "iteration": 1,
-      "loss": 3.665842056274414,
-      "certified_percentage": 80.07812499999997,
-      "f_h_positive": 25,
+      "loss": 0.3995373249053955,
+      "update_norm": 0.009199907071888447,
+      "certified_percentage": 78.90624999999997,
+      "f_h_positive": 19,
       "f_safe_violation": 0,
-      "f_depth": 41,
+      "f_depth": 44,
       "f_unsafe_split": 0
     },
     {
       "iteration": 2,
-      "loss": 2.1376819610595703,
-      "certified_percentage": 82.22656249999997,
-      "f_h_positive": 25,
+      "loss": 0.1675282120704651,
+      "update_norm": 0.0021127359941601753,
+      "certified_percentage": 80.85937499999997,
+      "f_h_positive": 17,
       "f_safe_violation": 0,
-      "f_depth": 25,
+      "f_depth": 31,
       "f_unsafe_split": 0
     },
     {
       "iteration": 3,
-      "loss": 0.9136710166931152,
-      "certified_percentage": 79.49218749999997,
-      "f_h_positive": 24,
+      "loss": 0.1736355572938919,
+      "update_norm": 0.00826598796993494,
+      "certified_percentage": 81.24999999999997,
+      "f_h_positive": 16,
       "f_safe_violation": 0,
-      "f_depth": 42,
+      "f_depth": 24,
       "f_unsafe_split": 0
     },
     {
       "iteration": 4,
-      "loss": 2.1198606491088867,
-      "certified_percentage": 71.87499999999997,
-      "f_h_positive": 22,
+      "loss": 0.11341192573308945,
+      "update_norm": 0.004980139434337616,
+      "certified_percentage": 81.64062499999997,
+      "f_h_positive": 19,
       "f_safe_violation": 0,
-      "f_depth": 108,
+      "f_depth": 15,
       "f_unsafe_split": 0
     },
     {
       "iteration": 5,
-      "loss": 3.194532632827759,
-      "certified_percentage": 83.39843749999997,
+      "loss": 0.06030336394906044,
+      "update_norm": 0.0006964716012589633,
+      "certified_percentage": 81.64062499999997,
+      "f_h_positive": 20,
+      "f_safe_violation": 0,
+      "f_depth": 13,
+      "f_unsafe_split": 0
+    },
+    {
+      "iteration": 6,
+      "loss": 0.09688156098127365,
+      "update_norm": 0.0005958608235232532,
+      "certified_percentage": 81.83593749999997,
+      "f_h_positive": 21,
+      "f_safe_violation": 0,
+      "f_depth": 11,
+      "f_unsafe_split": 0
+    },
+    {
+      "iteration": 7,
+      "loss": 0.10592955350875854,
+      "update_norm": 0.0004889215924777091,
+      "certified_percentage": 81.83593749999997,
+      "f_h_positive": 21,
+      "f_safe_violation": 0,
+      "f_depth": 11,
+      "f_unsafe_split": 0
+    },
+    {
+      "iteration": 8,
+      "loss": 0.15795381367206573,
+      "update_norm": 0.0004162797995377332,
+      "certified_percentage": 81.83593749999997,
+      "f_h_positive": 21,
+      "f_safe_violation": 0,
+      "f_depth": 11,
+      "f_unsafe_split": 0
+    },
+    {
+      "iteration": 9,
+      "loss": 0.06290231645107269,
+      "update_norm": 0.0031091165728867054,
+      "certified_percentage": 82.61718749999997,
       "f_h_positive": 19,
       "f_safe_violation": 0,
-      "f_depth": 3,
+      "f_depth": 6,
+      "f_unsafe_split": 0
+    },
+    {
+      "iteration": 10,
+      "loss": 0.116543710231781,
+      "update_norm": 0.0005313704023137689,
+      "certified_percentage": 82.61718749999997,
+      "f_h_positive": 19,
+      "f_safe_violation": 0,
+      "f_depth": 6,
       "f_unsafe_split": 0
     }
   ],
-  "timestamp": "2026-04-07 16:14:41"
+  "timestamp": "2026-04-08 16:38:04"
 }
