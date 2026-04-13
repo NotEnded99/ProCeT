@@ -18,7 +18,7 @@ def load_all_results(results_dir):
 
     for system in DYNAMICS_SYSTEMS:
         for activation in ACTIVATIONS:
-            filename = f"result_{system}_{activation}.json"
+            filename = f"result_{system}_{activation}_v7.json"
             filepath = os.path.join(results_dir, filename)
 
             if os.path.exists(filepath):
@@ -151,7 +151,7 @@ def save_summary_json(headers, rows, output_path):
 def main():
     # 获取当前脚本所在目录
     script_dir = os.path.dirname(os.path.abspath(__file__))
-    results_dir = os.path.join(script_dir, "nr_results_v1")
+    results_dir = os.path.join(script_dir, "nr_results_v7")
 
     if not os.path.exists(results_dir):
         print(f"目录不存在: {results_dir}")

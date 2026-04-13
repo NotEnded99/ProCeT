@@ -1,0 +1,114 @@
+{
+  "system": "barr3",
+  "activation": "Tanh",
+  "initial_pass_rate": 70.21484374999997,
+  "final_pass_rate": 71.58203124999997,
+  "improvement": 1.3671875,
+  "num_iterations": 10,
+  "num_inner_steps": 5,
+  "lr": 0.001,
+  "max_depth": 10,
+  "iteration_results": [
+    {
+      "iteration": 1,
+      "loss": 0.022803902626037598,
+      "update_norm": 1.0,
+      "certified_percentage": 70.50781249999997,
+      "f_h_positive": 0,
+      "f_safe_violation": 0,
+      "f_depth": 604,
+      "f_unsafe_split": 0
+    },
+    {
+      "iteration": 2,
+      "loss": 0.020616775378584862,
+      "update_norm": 1.0000001192092896,
+      "certified_percentage": 70.60546874999997,
+      "f_h_positive": 0,
+      "f_safe_violation": 0,
+      "f_depth": 602,
+      "f_unsafe_split": 0
+    },
+    {
+      "iteration": 3,
+      "loss": 0.019687799736857414,
+      "update_norm": 1.0,
+      "certified_percentage": 70.75195312499997,
+      "f_h_positive": 0,
+      "f_safe_violation": 0,
+      "f_depth": 599,
+      "f_unsafe_split": 0
+    },
+    {
+      "iteration": 4,
+      "loss": 0.01766393333673477,
+      "update_norm": 1.0,
+      "certified_percentage": 70.94726562499997,
+      "f_h_positive": 0,
+      "f_safe_violation": 0,
+      "f_depth": 595,
+      "f_unsafe_split": 0
+    },
+    {
+      "iteration": 5,
+      "loss": 0.020516909658908844,
+      "update_norm": 0.9999999403953552,
+      "certified_percentage": 71.09374999999997,
+      "f_h_positive": 0,
+      "f_safe_violation": 0,
+      "f_depth": 592,
+      "f_unsafe_split": 0
+    },
+    {
+      "iteration": 6,
+      "loss": 0.018548453226685524,
+      "update_norm": 1.0,
+      "certified_percentage": 71.28906249999997,
+      "f_h_positive": 0,
+      "f_safe_violation": 0,
+      "f_depth": 588,
+      "f_unsafe_split": 0
+    },
+    {
+      "iteration": 7,
+      "loss": 0.01675884798169136,
+      "update_norm": 1.0,
+      "certified_percentage": 71.33789062499997,
+      "f_h_positive": 0,
+      "f_safe_violation": 0,
+      "f_depth": 587,
+      "f_unsafe_split": 0
+    },
+    {
+      "iteration": 8,
+      "loss": 0.019100304692983627,
+      "update_norm": 0.9999999403953552,
+      "certified_percentage": 71.24023437499997,
+      "f_h_positive": 0,
+      "f_safe_violation": 0,
+      "f_depth": 589,
+      "f_unsafe_split": 0
+    },
+    {
+      "iteration": 9,
+      "loss": 0.02647377736866474,
+      "update_norm": 1.0,
+      "certified_percentage": 71.43554687499997,
+      "f_h_positive": 0,
+      "f_safe_violation": 0,
+      "f_depth": 585,
+      "f_unsafe_split": 0
+    },
+    {
+      "iteration": 10,
+      "loss": 0.030620744451880455,
+      "update_norm": 1.0,
+      "certified_percentage": 71.58203124999997,
+      "f_h_positive": 0,
+      "f_safe_violation": 0,
+      "f_depth": 582,
+      "f_unsafe_split": 0
+    }
+  ],
+  "timestamp": "2026-04-10 12:36:43"
+}

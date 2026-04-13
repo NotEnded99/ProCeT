@@ -1,0 +1,31 @@
+{
+  "system": "simple_2d",
+  "activation": "Sigmoid",
+  "method": "Progressive Depth Phased Repair",
+  "rs_n": 50,
+  "rs_sigma": 0.001,
+  "top_n_protect": 500,
+  "max_depth_start": 10,
+  "max_depth_limit": 15,
+  "depth_schedule": [
+    10,
+    12,
+    15
+  ],
+  "num_inner_steps": 5,
+  "lr": 0.005,
+  "target_pass_rate": 100.0,
+  "plateau_threshold": 0.5,
+  "max_stagnant_iterations": 5,
+  "max_total_iterations": 30,
+  "initial_pass_rate": 100.00000000000003,
+  "final_pass_rate": 100.00000000000003,
+  "improvement": 0.0,
+  "num_iterations": 0,
+  "initial_regions": {
+    "V_safe": 220,
+    "V_unsafe": 74
+  },
+  "iteration_results": [],
+  "timestamp": "2026-04-12 22:17:58"
+}

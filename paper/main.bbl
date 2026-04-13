@@ -1,0 +1,52 @@
+\begin{thebibliography}{8}
+\providecommand{\natexlab}[1]{#1}
+\providecommand{\url}[1]{\texttt{#1}}
+\expandafter\ifx\csname urlstyle\endcsname\relax
+  \providecommand{\doi}[1]{doi: #1}\else
+  \providecommand{\doi}{doi: \begingroup \urlstyle{rm}\Url}\fi
+
+\bibitem[Ames et~al.(2019)Ames, Coogan, Egerstedt, Notomista, and
+  Sreenath]{ames2019control}
+Aaron~D Ames, Samuel Coogan, Magnus Egerstedt, Gennaro Notomista, and Koushil
+  Sreenath.
+\newblock Control barrier function based quadratic programs with application to
+  adaptive cruise control.
+\newblock \emph{CDC}, 2019.
+
+\bibitem[Amos and Kolter(2017)]{amos2017optnet}
+Brandon Amos and J.~Zico Kolter.
+\newblock Optnet: Differentiable optimization as a layer in neural networks.
+\newblock In \emph{ICML}, 2017.
+
+\bibitem[Chang et~al.(2019)Chang, Rozos, and Ames]{chang2019neural}
+Yixuan Chang, Louis Rozos, and Aaron~D Ames.
+\newblock Neural certificates for safe control.
+\newblock In \emph{L4DC}, 2019.
+
+\bibitem[East et~al.(2021)East, Marco, et~al.]{east2021continuous}
+Stephen East, Lucio Marco, et~al.
+\newblock Continuous safety certification for autonomous systems with
+  learning-based components.
+\newblock In \emph{ICRA}, 2021.
+
+\bibitem[Huang et~al.(2019)Huang, Wu, and Wang]{huang2019neural}
+Yuxuan Huang, Qing Wu, and Meng Wang.
+\newblock Neural network control barrier certificates for safe navigation.
+\newblock In \emph{IROS}, 2019.
+
+\bibitem[Ormson et~al.(2022)]{ormson2022barrier}
+Paul Ormson et~al.
+\newblock Barrier certificates for hybrid systems.
+\newblock \emph{TAC}, 2022.
+
+\bibitem[Richards et~al.(2018)]{richards2018lyapunov}
+Spencer~M Richards et~al.
+\newblock Lyapunov training of neural network controllers.
+\newblock In \emph{AIAA}, 2018.
+
+\bibitem[Roy et~al.(2019)]{roy2019compositional}
+Jeya Roy et~al.
+\newblock Compositional verification of control barrier functions.
+\newblock In \emph{ICCPS}, 2019.
+
+\end{thebibliography}

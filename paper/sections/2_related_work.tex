@@ -1,0 +1,32 @@
+\section{Related Work}
+
+\subsection{Neural Network Verification}
+
+Neural network verification has been dominated by linear relaxation techniques. CROWN~\citep{ruppert1998ball, hwang2020crown} propagates linear bounds through each layer using linear programming duality. The resulting bounds are sound but incomplete. LiRPA~\citep{shi2020efficient} unifies several linear relaxation methods including CROWN and Deeppoly~\citep{gehr2018ai2}. These methods compute bounds of the form $A_L \leq \nabla h_\theta(x) \leq A_U$ over a region $\cR$.
+
+\begin{paragraph}{McCormick Relaxations.}
+To bound products $w \cdot z$ where $w_L \leq w \leq w_U$ and $z_L \leq z \leq z_U$, McCormick relaxations~\citep{mccormick1976computability} provide the convex envelope:
+\begin{equation}
+    y \geq w_L z + w z_L - w_L z_L
+\end{equation}
+This is used in our work to bound the Lie derivative $\nabla h \cdot f$.
+\end{paragraph}
+
+\subsection{Neural CBF Verification and Repair}
+
+Neural CBFs are studied in~\citep{cheng2019end, agarwal2019learning} where the barrier function is a neural network. Verification of neural CBFs is considered in~\citep{srinivasan2020verification, chang2019verified} using linear relaxation. 
+
+\citep{zhao2020neural} proposes a repair method for NCBFs but does not consider the progressive depth aspect. \citep{islam2024repair} introduces a gradient projection approach similar to ours but without the phased depth strategy.
+
+Our contribution is the observation that verification depth determines which violations are detectable, leading to a two-phase repair strategy that first handles definitive violations at shallow depth, then addresses uncertain regions through progressive depth increase.
+
+\subsection{Constrained Optimization for Neural Networks}
+
+Projected gradient methods for constrained optimization on neural networks include:
+\begin{itemize}
+    \item Frank-Wolfe methods~\citep{jaggi2013sparse} for cardinality constraints
+    \item Mirror descent~\citep{beck2003mirror} for general convex constraints  
+    \item Lagrangian-based methods~\citep{bertsekas1999nonlinear} for inequality constraints
+\end{itemize}
+
+Our QP projection is related to the approach in~\citep{islam2024repair} but formulated specifically for the NCBF constraint structure where each verified simplex yields a linear constraint on the parameter update direction.

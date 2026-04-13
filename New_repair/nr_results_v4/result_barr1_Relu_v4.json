@@ -1,0 +1,121 @@
+{
+  "system": "barr1",
+  "activation": "Relu",
+  "method": "RS Jacobian + v3 Feature Point Loss",
+  "rs_n": 100,
+  "rs_sigma": 0.01,
+  "num_inner_steps": 5,
+  "lr": 0.0001,
+  "max_depth": 12,
+  "initial_pass_rate": 73.18115234375001,
+  "final_pass_rate": 73.26660156250001,
+  "improvement": 0.08544921875,
+  "num_iterations": 10,
+  "initial_regions": {
+    "V_safe": 1406,
+    "V_unsafe": 225
+  },
+  "iteration_results": [
+    {
+      "iteration": 1,
+      "loss": 0.3383079446211923,
+      "update_norm": 0.9892152547836304,
+      "certified_percentage": 73.15673828125001,
+      "f_h_positive": 110,
+      "f_safe_violation": 0,
+      "f_depth": 1558,
+      "f_unsafe_split": 0
+    },
+    {
+      "iteration": 2,
+      "loss": 0.33965573977911845,
+      "update_norm": 0.9864122271537781,
+      "certified_percentage": 73.19335937500001,
+      "f_h_positive": 110,
+      "f_safe_violation": 0,
+      "f_depth": 1555,
+      "f_unsafe_split": 0
+    },
+    {
+      "iteration": 3,
+      "loss": 0.33759693140746094,
+      "update_norm": 0.9904466867446899,
+      "certified_percentage": 73.21777343750001,
+      "f_h_positive": 112,
+      "f_safe_violation": 0,
+      "f_depth": 1554,
+      "f_unsafe_split": 0
+    },
+    {
+      "iteration": 4,
+      "loss": 0.33494184527080506,
+      "update_norm": 0.9914854168891907,
+      "certified_percentage": 73.15673828125001,
+      "f_h_positive": 112,
+      "f_safe_violation": 0,
+      "f_depth": 1559,
+      "f_unsafe_split": 0
+    },
+    {
+      "iteration": 5,
+      "loss": 0.33290676507749595,
+      "update_norm": 0.987494707107544,
+      "certified_percentage": 73.20556640625001,
+      "f_h_positive": 112,
+      "f_safe_violation": 0,
+      "f_depth": 1555,
+      "f_unsafe_split": 0
+    },
+    {
+      "iteration": 6,
+      "loss": 0.33088936703279614,
+      "update_norm": 0.9859660863876343,
+      "certified_percentage": 73.15673828125001,
+      "f_h_positive": 112,
+      "f_safe_violation": 0,
+      "f_depth": 1561,
+      "f_unsafe_split": 0
+    },
+    {
+      "iteration": 7,
+      "loss": 0.3297527839313261,
+      "update_norm": 0.9885608553886414,
+      "certified_percentage": 73.15673828125001,
+      "f_h_positive": 112,
+      "f_safe_violation": 0,
+      "f_depth": 1564,
+      "f_unsafe_split": 0
+    },
+    {
+      "iteration": 8,
+      "loss": 0.3286291004915256,
+      "update_norm": 0.9886572957038879,
+      "certified_percentage": 73.19335937500001,
+      "f_h_positive": 113,
+      "f_safe_violation": 0,
+      "f_depth": 1565,
+      "f_unsafe_split": 0
+    },
+    {
+      "iteration": 9,
+      "loss": 0.32470057398313656,
+      "update_norm": 0.9890679717063904,
+      "certified_percentage": 73.29101562500001,
+      "f_h_positive": 114,
+      "f_safe_violation": 0,
+      "f_depth": 1557,
+      "f_unsafe_split": 0
+    },
+    {
+      "iteration": 10,
+      "loss": 0.32135721086524427,
+      "update_norm": 0.9901288151741028,
+      "certified_percentage": 73.26660156250001,
+      "f_h_positive": 114,
+      "f_safe_violation": 0,
+      "f_depth": 1561,
+      "f_unsafe_split": 0
+    }
+  ],
+  "timestamp": "2026-04-12 12:39:36"
+}

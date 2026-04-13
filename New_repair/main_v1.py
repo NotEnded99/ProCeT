@@ -27,7 +27,7 @@ from lbp_neural_cbf.cbf.verify_cbf import verify_cbf
 from lbp_neural_cbf.translators import TorchTranslator
 
 from New_repair.geometry_module_new import compute_jacobian_matrix
-from New_repair.optimizer_module import repair_new_iteration, inner_loop_repair_with_qp
+from New_repair.optimizer_module import repair_new_iteration, inner_loop_repair_with_qp, inner_loop_repair_with_pgd
 
 # 支持的动力学系统映射
 DYNAMICS_SYSTEMS = {
@@ -124,7 +124,7 @@ def main():
     print("=" * 70)
 
     num_iterations = 10
-    max_depth = 10
+    max_depth = 12
 
     # ========== 1. 加载动力学系统 ==========
     dynamics_class = DYNAMICS_SYSTEMS[system_name_key]
@@ -303,7 +303,7 @@ def main():
             # 5.2 执行修复迭代
             print(f"\n[迭代 {iteration+1}.2] 执行修复迭代...")
 
-            inner_history = inner_loop_repair_with_qp(
+            inner_history = inner_loop_repair_with_pgd(
                     model=model,
                     J=J,                         # 外层传入的 J
                     F_h_positive_in_unsafe=F_h_positive_in_unsafe_init,

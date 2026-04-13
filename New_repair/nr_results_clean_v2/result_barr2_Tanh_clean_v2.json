@@ -1,0 +1,116 @@
+{
+  "system": "barr2",
+  "activation": "Tanh",
+  "initial_pass_rate": 98.99902343750001,
+  "final_pass_rate": 98.96240234375001,
+  "improvement": -0.03662109375,
+  "num_iterations": 10,
+  "num_samples": 100,
+  "num_inner_steps": 1,
+  "lr": 0.005,
+  "max_depth": 12,
+  "iteration_results": [
+    {
+      "iteration": 1,
+      "loss": 0.04657634720206261,
+      "update_norm": 1.8085880279541016,
+      "certified_percentage": 98.97460937500001,
+      "f_h_positive": 0,
+      "f_safe_violation": 0,
+      "f_depth": 84,
+      "f_unsafe_split": 0
+    },
+    {
+      "iteration": 2,
+      "loss": 0.031901828944683075,
+      "update_norm": 1.398356556892395,
+      "certified_percentage": 98.99902343750001,
+      "f_h_positive": 0,
+      "f_safe_violation": 0,
+      "f_depth": 82,
+      "f_unsafe_split": 0
+    },
+    {
+      "iteration": 3,
+      "loss": 0.020374976098537445,
+      "update_norm": 1.2371609210968018,
+      "certified_percentage": 98.97460937500001,
+      "f_h_positive": 0,
+      "f_safe_violation": 0,
+      "f_depth": 84,
+      "f_unsafe_split": 0
+    },
+    {
+      "iteration": 4,
+      "loss": 0.03935479745268822,
+      "update_norm": 1.926975131034851,
+      "certified_percentage": 99.01123046875001,
+      "f_h_positive": 0,
+      "f_safe_violation": 0,
+      "f_depth": 81,
+      "f_unsafe_split": 0
+    },
+    {
+      "iteration": 5,
+      "loss": 0.021167103201150894,
+      "update_norm": 1.5289888381958008,
+      "certified_percentage": 99.06005859375001,
+      "f_h_positive": 0,
+      "f_safe_violation": 0,
+      "f_depth": 77,
+      "f_unsafe_split": 0
+    },
+    {
+      "iteration": 6,
+      "loss": 0.014484024606645107,
+      "update_norm": 1.060421109199524,
+      "certified_percentage": 99.02343750000001,
+      "f_h_positive": 0,
+      "f_safe_violation": 0,
+      "f_depth": 80,
+      "f_unsafe_split": 0
+    },
+    {
+      "iteration": 7,
+      "loss": 0.018385788425803185,
+      "update_norm": 1.5226755142211914,
+      "certified_percentage": 99.03564453125001,
+      "f_h_positive": 0,
+      "f_safe_violation": 0,
+      "f_depth": 79,
+      "f_unsafe_split": 0
+    },
+    {
+      "iteration": 8,
+      "loss": 0.009552374482154846,
+      "update_norm": 0.9708155989646912,
+      "certified_percentage": 99.04785156250001,
+      "f_h_positive": 2,
+      "f_safe_violation": 0,
+      "f_depth": 75,
+      "f_unsafe_split": 0
+    },
+    {
+      "iteration": 9,
+      "loss": 0.6800284804776311,
+      "update_norm": 10.0,
+      "certified_percentage": 98.91357421875001,
+      "f_h_positive": 0,
+      "f_safe_violation": 0,
+      "f_depth": 89,
+      "f_unsafe_split": 0
+    },
+    {
+      "iteration": 10,
+      "loss": 0.03900140896439552,
+      "update_norm": 1.3979014158248901,
+      "certified_percentage": 98.96240234375001,
+      "f_h_positive": 0,
+      "f_safe_violation": 0,
+      "f_depth": 85,
+      "f_unsafe_split": 0
+    }
+  ],
+  "timestamp": "2026-04-10 13:57:37",
+  "note": "clean_v2: 无 Jacobian/QP 投影，直接梯度更新"
+}

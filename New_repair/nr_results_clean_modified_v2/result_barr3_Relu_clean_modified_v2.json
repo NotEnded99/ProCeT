@@ -1,0 +1,203 @@
+{
+  "system": "barr3",
+  "activation": "Relu",
+  "initial_pass_rate": 75.46386718749997,
+  "final_pass_rate": 73.64501953124997,
+  "improvement": -1.81884765625,
+  "num_iterations": 10,
+  "num_samples": 100,
+  "num_inner_steps": 2,
+  "lr": 0.005,
+  "max_depth": 12,
+  "lambda_safe": 1.0,
+  "lambda_unsafe": 10.0,
+  "lambda_unsafe_max": 5.0,
+  "lambda_cbf": 5.0,
+  "safe_margin": 0.01,
+  "unsafe_margin": 0.01,
+  "cbf_margin": 0.0,
+  "iteration_results": [
+    {
+      "iteration": 1,
+      "loss": 0.01630314067006111,
+      "update_norm": 0.9318505525588989,
+      "certified_percentage": 75.24414062499997,
+      "f_h_positive": 0,
+      "f_safe_violation": 0,
+      "f_depth": 2028,
+      "f_unsafe_split": 0,
+      "loss_dict": {
+        "total_loss": 0.01630314067006111,
+        "safe_loss": 0.010774453170597553,
+        "unsafe_loss": 0.0,
+        "unsafe_max_loss": 0.0,
+        "cbf_loss": 0.0011057372903451324,
+        "boundary_loss": 0.0
+      }
+    },
+    {
+      "iteration": 2,
+      "loss": 0.0160432867705822,
+      "update_norm": 0.8526175022125244,
+      "certified_percentage": 74.60937499999997,
+      "f_h_positive": 0,
+      "f_safe_violation": 0,
+      "f_depth": 2080,
+      "f_unsafe_split": 0,
+      "loss_dict": {
+        "total_loss": 0.0160432867705822,
+        "safe_loss": 0.010310371406376362,
+        "unsafe_loss": 0.0,
+        "unsafe_max_loss": 0.0,
+        "cbf_loss": 0.0011465828865766525,
+        "boundary_loss": 0.0
+      }
+    },
+    {
+      "iteration": 3,
+      "loss": 0.01452164351940155,
+      "update_norm": 0.781380832195282,
+      "certified_percentage": 74.02343749999997,
+      "f_h_positive": 5,
+      "f_safe_violation": 0,
+      "f_depth": 2117,
+      "f_unsafe_split": 0,
+      "loss_dict": {
+        "total_loss": 0.01452164351940155,
+        "safe_loss": 0.008536565117537975,
+        "unsafe_loss": 0.0,
+        "unsafe_max_loss": 0.0,
+        "cbf_loss": 0.0011970156338065863,
+        "boundary_loss": 0.0
+      }
+    },
+    {
+      "iteration": 4,
+      "loss": 0.7167949676513672,
+      "update_norm": 6.007961750030518,
+      "certified_percentage": 74.93896484374997,
+      "f_h_positive": 0,
+      "f_safe_violation": 0,
+      "f_depth": 2053,
+      "f_unsafe_split": 0,
+      "loss_dict": {
+        "total_loss": 0.7167949676513672,
+        "safe_loss": 0.07249866425991058,
+        "unsafe_loss": 0.023715181276202202,
+        "unsafe_max_loss": 0.04426325112581253,
+        "cbf_loss": 0.03716563433408737,
+        "boundary_loss": 0.0
+      }
+    },
+    {
+      "iteration": 5,
+      "loss": 0.191336527466774,
+      "update_norm": 1.965829849243164,
+      "certified_percentage": 74.90234374999997,
+      "f_h_positive": 0,
+      "f_safe_violation": 0,
+      "f_depth": 2056,
+      "f_unsafe_split": 0,
+      "loss_dict": {
+        "total_loss": 0.191336527466774,
+        "safe_loss": 0.002575906226411462,
+        "unsafe_loss": 0.0,
+        "unsafe_max_loss": 0.0,
+        "cbf_loss": 0.03775212541222572,
+        "boundary_loss": 0.0
+      }
+    },
+    {
+      "iteration": 6,
+      "loss": 0.02125827968120575,
+      "update_norm": 0.554388165473938,
+      "certified_percentage": 74.82910156249997,
+      "f_h_positive": 3,
+      "f_safe_violation": 0,
+      "f_depth": 2058,
+      "f_unsafe_split": 0,
+      "loss_dict": {
+        "total_loss": 0.02125827968120575,
+        "safe_loss": 0.0051743690855801105,
+        "unsafe_loss": 0.0,
+        "unsafe_max_loss": 0.0,
+        "cbf_loss": 0.003216782119125128,
+        "boundary_loss": 0.0
+      }
+    },
+    {
+      "iteration": 7,
+      "loss": 0.13990242779254913,
+      "update_norm": 2.751669406890869,
+      "certified_percentage": 74.64599609374997,
+      "f_h_positive": 0,
+      "f_safe_violation": 0,
+      "f_depth": 2077,
+      "f_unsafe_split": 0,
+      "loss_dict": {
+        "total_loss": 0.13990242779254913,
+        "safe_loss": 0.07141004502773285,
+        "unsafe_loss": 0.0023066094145178795,
+        "unsafe_max_loss": 0.0023568994365632534,
+        "cbf_loss": 0.00672835623845458,
+        "boundary_loss": 0.0
+      }
+    },
+    {
+      "iteration": 8,
+      "loss": 0.02587195485830307,
+      "update_norm": 0.8564713597297668,
+      "certified_percentage": 74.30419921874997,
+      "f_h_positive": 0,
+      "f_safe_violation": 0,
+      "f_depth": 2105,
+      "f_unsafe_split": 0,
+      "loss_dict": {
+        "total_loss": 0.02587195485830307,
+        "safe_loss": 0.009548702277243137,
+        "unsafe_loss": 0.0,
+        "unsafe_max_loss": 0.0,
+        "cbf_loss": 0.003264650236815214,
+        "boundary_loss": 0.0
+      }
+    },
+    {
+      "iteration": 9,
+      "loss": 0.017488062381744385,
+      "update_norm": 0.718952476978302,
+      "certified_percentage": 73.81591796874997,
+      "f_h_positive": 0,
+      "f_safe_violation": 0,
+      "f_depth": 2145,
+      "f_unsafe_split": 0,
+      "loss_dict": {
+        "total_loss": 0.017488062381744385,
+        "safe_loss": 0.007989898324012756,
+        "unsafe_loss": 0.0,
+        "unsafe_max_loss": 0.0,
+        "cbf_loss": 0.0018996329745277762,
+        "boundary_loss": 0.0
+      }
+    },
+    {
+      "iteration": 10,
+      "loss": 0.02046818472445011,
+      "update_norm": 0.6122941970825195,
+      "certified_percentage": 73.64501953124997,
+      "f_h_positive": 3,
+      "f_safe_violation": 0,
+      "f_depth": 2154,
+      "f_unsafe_split": 0,
+      "loss_dict": {
+        "total_loss": 0.02046818472445011,
+        "safe_loss": 0.006090941373258829,
+        "unsafe_loss": 0.0,
+        "unsafe_max_loss": 0.0,
+        "cbf_loss": 0.0028754486702382565,
+        "boundary_loss": 0.0
+      }
+    }
+  ],
+  "timestamp": "2026-04-10 15:51:02",
+  "note": "clean_modified_v2: 完整 5 种 loss，直接梯度更新"
+}

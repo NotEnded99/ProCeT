@@ -1,0 +1,48 @@
+This is BibTeX, Version 0.99d (TeX Live 2019/Debian)
+Capacity: max_strings=200000, hash_size=200000, hash_prime=170003
+The top-level auxiliary file: main.aux
+The style file: plainnat.bst
+Database file #1: references.bib
+Warning--I didn't find a database entry for "barr_systems"
+You've used 8 entries,
+            2773 wiz_defined-function locations,
+            630 strings with 5845 characters,
+and the built_in function-call counts, 3371 in all, are:
+= -- 266
+> -- 218
+< -- 4
++ -- 74
+- -- 66
+* -- 237
+:= -- 528
+add.period$ -- 24
+call.type$ -- 8
+change.case$ -- 42
+chr.to.int$ -- 8
+cite$ -- 16
+duplicate$ -- 180
+empty$ -- 305
+format.name$ -- 79
+if$ -- 711
+int.to.chr$ -- 1
+int.to.str$ -- 1
+missing$ -- 8
+newline$ -- 48
+num.names$ -- 32
+pop$ -- 111
+preamble$ -- 1
+purify$ -- 34
+quote$ -- 0
+skip$ -- 124
+stack$ -- 0
+substring$ -- 16
+swap$ -- 14
+text.length$ -- 0
+text.prefix$ -- 0
+top$ -- 0
+type$ -- 88
+warning$ -- 0
+while$ -- 24
+width$ -- 0
+write$ -- 103
+(There was 1 warning)

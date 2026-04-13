@@ -125,10 +125,10 @@ def compute_repair_loss_and_grad(
             pass  # 暂不追踪 tag，保持简洁
         print(f"  有效 loss 项: {n_valid}/{total_failure}")
 
-    total_loss = sum(_valid_terms)
+    total_loss = torch.stack(_valid_terms).mean()
 
     if verbose:
-        print(f"  total_loss (raw sum): {total_loss.item():.6f}")
+        print(f"  total_loss (mean): {total_loss.item():.6f}")
 
 
     model.zero_grad()
@@ -1008,7 +1008,9 @@ def inner_loop_repair(
             continue
 
         # ---- 2.4 合并损失并反向传播 ----
-        total_loss = sum(w * t for (w, t, _) in all_terms)
+        weighted_sum = sum(w * t for (w, t, _) in all_terms)
+        total_weight = sum(w for (w, _, _) in all_terms)
+        total_loss = weighted_sum / total_weight
         model.zero_grad()
         total_loss.backward()
 
@@ -1463,7 +1465,9 @@ def inner_loop_repair_with_qp(
             continue
 
         # ---- 3.4 合并损失并反向传播 ----
-        total_loss = sum(w * t for (w, t, _) in all_terms)
+        weighted_sum = sum(w * t for (w, t, _) in all_terms)
+        total_weight = sum(w for (w, _, _) in all_terms)
+        total_loss = weighted_sum / total_weight
         model.zero_grad()
         total_loss.backward()
 
@@ -1568,3 +1572,287 @@ def inner_loop_repair_with_qp(
         })
 
     return inner_history
+
+
+def inner_loop_repair_with_pgd(
+    model: nn.Module,
+    J: torch.Tensor,
+    F_h_positive_in_unsafe: List[Union[torch.Tensor, np.ndarray]],
+    F_safe_cbf_violation: List[Union[torch.Tensor, np.ndarray]],
+    F_depth_limit_reached: List[Union[torch.Tensor, np.ndarray]],
+    F_unsafe_cannot_split: List[Union[torch.Tensor, np.ndarray]],
+    dynamics_model,
+    translator,
+    num_inner_steps: int = 10,
+    batch_ratio: float = 0.2,
+    lr: float = 1e-3,
+    tolerance: float = -1e-12,
+    grad_clip_norm: float = 10.0,
+    verbose: bool = False,
+    seed: int = None,
+    # ---- 已验证区域和组合损失权重 ----
+    V_safe: List[Union[torch.Tensor, np.ndarray]] = None,
+    V_unsafe: List[Union[torch.Tensor, np.ndarray]] = None,
+    lambda_penalty: float = 1.0,
+    lambda_stability: float = 0.1,
+    lambda_barrier: float = 0.1,
+    gamma_safe: float = 0.1,
+    gamma_unsafe: float = 0.1,
+    verified_batch_ratio: float = 0.1,
+    # ---- PGD 参数 ----
+    pgd_steps: int = 20,
+    pgd_lr: float = 0.1,
+) -> List[Dict[str, float]]:
+    """
+    内循环 Mini-batch 修复策略（投影梯度下降 PGD 求解 QP 版本）。
+
+    用投影梯度下降代替 cvxpy 求解器来加速 QP 问题：
+        min_λ 1/2 ||J^T λ - g||²  s.t.  λ >= 0
+
+    QP 梯度：∇f(λ) = (J J^T) λ - (J g)
+    投影操作：Proj_+(λ) = max(0, λ)
+
+    总损失函数（与 QP 版本相同）：
+        L_total = λ1 * L_penalty + λ2 * L_stability + λ3 * L_barrier
+
+    Args:
+        J: 雅可比矩阵 [N, P]
+        pgd_steps: PGD 迭代步数
+        pgd_lr: PGD 学习率
+    """
+    import random as random_module
+    from New_repair.geometry_module_new import compute_simplex_bound_batch
+
+    # 设置随机种子
+    if seed is not None:
+        random_module.seed(seed)
+        np.random.seed(seed)
+        torch.manual_seed(seed)
+
+    device = next(model.parameters()).device
+    dtype = next(model.parameters()).dtype
+
+    # ---------- 1. 准备区域列表 ----------
+    F_all = (
+        list(F_h_positive_in_unsafe) +
+        list(F_safe_cbf_violation) +
+        list(F_depth_limit_reached) +
+        list(F_unsafe_cannot_split)
+    )
+    total_failures = len(F_all)
+    n_h = len(F_h_positive_in_unsafe)
+    n_safe = len(F_safe_cbf_violation)
+    n_depth = len(F_depth_limit_reached)
+
+    V_safe_list = list(V_safe) if V_safe is not None else []
+    V_unsafe_list = list(V_unsafe) if V_unsafe is not None else []
+
+    # J 矩阵信息
+    J_rows = J.shape[0]
+    num_params = J.shape[1]
+
+    if total_failures == 0 and not V_safe_list and not V_unsafe_list:
+        if verbose:
+            print("  [内循环PGD] 没有失败区域也没有已验证区域，跳过。")
+        return []
+
+    batch_size = max(1, int(total_failures * batch_ratio))
+    if verbose:
+        print(f"  [内循环PGD] J.shape={J.shape}, 失败区域: {total_failures}(batch={batch_size}), "
+              f"V_safe={len(V_safe_list)}, V_unsafe={len(V_unsafe_list)}, "
+              f"内迭代={num_inner_steps}, PGD步数={pgd_steps}, PGD lr={pgd_lr}")
+
+    # ---------- 2. 预计算 J 归一化 ----------
+    epsilon = 1e-8
+    J_norms = torch.norm(J, dim=1, keepdim=True)  # [N, 1]
+    J_hat = J / (J_norms + epsilon)  # [N, P], 每行单位化
+    J_hat_np = J_hat.detach().cpu().numpy()
+
+    inner_history = []
+
+    # ---------- 3. 内循环迭代 ----------
+    for inner_step in range(num_inner_steps):
+        all_terms = []  # (weight, tensor, name) 三元组
+
+        # ---- 3.1 L_penalty: 失败区域（批量计算）----
+        if total_failures > 0:
+            if batch_ratio < 1.0 and total_failures > batch_size:
+                indices = random_module.sample(range(total_failures), batch_size)
+            else:
+                indices = list(range(total_failures))
+
+            idx_h = [i for i in indices if i < n_h]
+            idx_safe = [i - n_h for i in indices if n_h <= i < n_h + n_safe]
+            idx_depth = [i - n_h - n_safe for i in indices
+                         if n_h + n_safe <= i < n_h + n_safe + n_depth]
+            idx_unsafe = [i - n_h - n_safe - n_depth for i in indices
+                          if i >= n_h + n_safe + n_depth]
+
+            F_bh = [F_h_positive_in_unsafe[i] for i in idx_h] if idx_h else []
+            F_bs = [F_safe_cbf_violation[i] for i in idx_safe] if idx_safe else []
+            F_bd = [F_depth_limit_reached[i] for i in idx_depth] if idx_depth else []
+            F_bu = [F_unsafe_cannot_split[i] for i in idx_unsafe] if idx_unsafe else []
+
+            # F_h_positive_in_unsafe: clamp(h_lb, 0)^2
+            if F_bh:
+                h_lb_all, _ = compute_simplex_bound_batch(
+                    model, F_bh, 'unsafe', dynamics_model=None, translator=translator)
+                penalty_terms = torch.clamp(h_lb_all, min=0.0) ** 2
+                penalty_terms = penalty_terms[torch.isfinite(penalty_terms) & (penalty_terms > 0)]
+                if penalty_terms.numel() > 0:
+                    all_terms.append((lambda_penalty, penalty_terms.mean(), 'L_penalty_h'))
+
+            # F_safe_cbf_violation + F_depth + F_unsafe_split: clamp(tol - min_L, 0)^2
+            F_safe_batch = F_bs + F_bd + F_bu
+            if F_safe_batch:
+                min_L_all = compute_simplex_bound_batch(
+                    model, F_safe_batch, 'safe', dynamics_model=dynamics_model, translator=translator)
+                safe_terms = torch.clamp(tolerance - min_L_all, min=0.0) ** 2
+                safe_terms = safe_terms[torch.isfinite(safe_terms) & (safe_terms > 0)]
+                if safe_terms.numel() > 0:
+                    all_terms.append((lambda_penalty, safe_terms.mean(), 'L_penalty_safe'))
+
+        # ---- 3.2 L_stability: 已验证安全区 V_safe ----
+        if V_safe_list:
+            v_batch = max(1, int(len(V_safe_list) * verified_batch_ratio))
+            v_idx = random_module.sample(range(len(V_safe_list)), min(v_batch, len(V_safe_list)))
+            V_batch = [V_safe_list[i] for i in v_idx]
+            min_L_all = compute_simplex_bound_batch(
+                model, V_batch, 'safe', dynamics_model=dynamics_model, translator=translator)
+            stability_terms = torch.clamp(gamma_safe - min_L_all, min=0.0) ** 2
+            stability_terms = stability_terms[torch.isfinite(stability_terms)]
+            if stability_terms.numel() > 0:
+                all_terms.append((lambda_stability, stability_terms.mean(), 'L_stability'))
+
+        # ---- 3.3 L_barrier: 已验证障碍区 V_unsafe ----
+        if V_unsafe_list:
+            v_batch = max(1, int(len(V_unsafe_list) * verified_batch_ratio))
+            v_idx = random_module.sample(range(len(V_unsafe_list)), min(v_batch, len(V_unsafe_list)))
+            V_batch_unsafe = [V_unsafe_list[i] for i in v_idx]
+            _, h_ub_all = compute_simplex_bound_batch(
+                model, V_batch_unsafe, 'unsafe', dynamics_model=None, translator=translator)
+            barrier_terms = torch.clamp(h_ub_all + gamma_unsafe, min=0.0) ** 2
+            barrier_terms = barrier_terms[torch.isfinite(barrier_terms)]
+            if barrier_terms.numel() > 0:
+                all_terms.append((lambda_barrier, barrier_terms.mean(), 'L_barrier'))
+
+        # 无有效项则跳过
+        if len(all_terms) == 0:
+            if verbose:
+                print(f"    [内步 {inner_step+1}] 无需修复，Loss为0，跳过。")
+            inner_history.append({
+                'step': inner_step + 1,
+                'loss': 0.0,
+                'L_penalty': 0.0,
+                'L_stability': 0.0,
+                'L_barrier': 0.0,
+                'grad_norm': 0.0,
+                'update_norm': 0.0,
+                'active_constraints': 0,
+            })
+            continue
+
+        # ---- 3.4 合并损失并反向传播 ----
+        weighted_sum = sum(w * t for (w, t, _) in all_terms)
+        total_weight = sum(w for (w, _, _) in all_terms)
+        total_loss = weighted_sum / total_weight
+
+        model.zero_grad()
+        total_loss.backward()
+
+        # 提取原始梯度
+        g_raw = torch.cat([
+            p.grad.flatten() if p.grad is not None
+            else torch.zeros(p.numel(), dtype=dtype, device=device)
+            for p in model.parameters()
+        ])
+        g_raw = torch.nan_to_num(g_raw, nan=0.0, posinf=0.0, neginf=0.0)
+
+        grad_norm = g_raw.norm().item()
+        if grad_norm < 1e-12:
+            if verbose:
+                print(f"    [内步 {inner_step+1}] 梯度过小，跳过更新。")
+            inner_history.append({
+                'step': inner_step + 1,
+                'loss': total_loss.item(),
+                'L_penalty': 0.0,
+                'L_stability': 0.0,
+                'L_barrier': 0.0,
+                'grad_norm': grad_norm,
+                'update_norm': 0.0,
+                'active_constraints': 0,
+            })
+            continue
+
+        # ---- 3.5 投影梯度下降求解 QP ----
+        # 梯度归一化
+        g_hat = g_raw / (grad_norm + epsilon)  # 单位向量
+
+        # 预计算 J^T @ g_hat [P] -> J @ g_hat [N]
+        # QP: min 1/2 λ^T (J J^T) λ - (J g)^T λ  s.t. λ >= 0
+        # 实际上我们用 J_hat 来保持一致
+        Jg = J_hat_np @ g_hat.cpu().numpy()  # [N]
+
+        # PGD 迭代求解 λ
+        # ∇f(λ) = J J^T λ - J g
+        JJT = J_hat_np @ J_hat_np.T  # [N, N]  (提前计算加速)
+
+        lam = np.zeros(J_rows, dtype=np.float64)  # 初始化 λ = 0
+
+        for pgd_iter in range(pgd_steps):
+            # 梯度: ∇f(λ) = JJT @ λ - Jg
+            grad_f = JJT @ lam - Jg
+
+            # 梯度下降
+            lam = lam - pgd_lr * grad_f
+
+            # 投影到非负象限: λ = max(0, λ)
+            lam = np.maximum(lam, 0.0)
+
+        lam_star = torch.tensor(lam, dtype=dtype, device=device)
+        active_constraints = int(np.sum(lam > 1e-4))
+
+        # 安全的更新方向: d = g_hat - J_hat^T @ λ_star
+        g_update = g_hat - (J_hat.T @ lam_star)
+
+        # 可选梯度裁剪
+        update_norm_raw = g_update.norm().item()
+        if update_norm_raw > grad_clip_norm:
+            g_update = g_update * (grad_clip_norm / update_norm_raw)
+
+        # ---- 3.6 参数更新: θ_new = θ_old - lr * g_update ----
+        params = [p for p in model.parameters() if p.requires_grad]
+        theta_old = torch.nn.utils.parameters_to_vector(params)
+        theta_new = theta_old - lr * g_update
+        torch.nn.utils.vector_to_parameters(theta_new, params)
+        update_norm = (theta_new - theta_old).norm().item()
+
+        # ---- 3.7 记录 ----
+        loss_vals = {}
+        for (_, t, name) in all_terms:
+            v = t.detach().item()
+            if name.startswith('L_penalty'):
+                loss_vals['L_penalty'] = loss_vals.get('L_penalty', 0.0) + v
+            else:
+                loss_vals[name] = v
+
+        if verbose:
+            loss_str = ", ".join(f"{n}={v:.6f}" for n, v in loss_vals.items())
+            print(f"    [内步 {inner_step+1}/{num_inner_steps}] "
+                  f"total={total_loss.item():.6f} ({loss_str}), "
+                  f"|g|={grad_norm:.4f}, |d|={update_norm:.6f}, active={active_constraints}/{J_rows}")
+
+        inner_history.append({
+            'step': inner_step + 1,
+            'loss': total_loss.item(),
+            'L_penalty': loss_vals.get('L_penalty', 0.0),
+            'L_stability': loss_vals.get('L_stability', 0.0),
+            'L_barrier': loss_vals.get('L_barrier', 0.0),
+            'grad_norm': grad_norm,
+            'update_norm': update_norm,
+            'active_constraints': active_constraints,
+        })
+
+    return inner_history
+
+

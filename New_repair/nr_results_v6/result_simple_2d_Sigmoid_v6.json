@@ -1,0 +1,132 @@
+{
+  "system": "simple_2d",
+  "activation": "Sigmoid",
+  "method": "Top-N V_safe Protection",
+  "rs_n": 50,
+  "rs_sigma": 0.001,
+  "top_n_protect": 500,
+  "num_inner_steps": 5,
+  "lr": 0.005,
+  "max_depth": 12,
+  "initial_pass_rate": 100.00000000000003,
+  "final_pass_rate": 100.0,
+  "improvement": -2.842170943040401e-14,
+  "num_iterations": 10,
+  "initial_regions": {
+    "V_safe": 220,
+    "V_unsafe": 74
+  },
+  "iteration_results": [
+    {
+      "iteration": 1,
+      "loss": 0.0,
+      "update_norm": 0.0,
+      "certified_percentage": 100.0,
+      "f_h_positive": 0,
+      "f_safe_violation": 0,
+      "f_depth": 0,
+      "f_unsafe_split": 0,
+      "top_n_used": 0
+    },
+    {
+      "iteration": 2,
+      "loss": 0.0,
+      "update_norm": 0.0,
+      "certified_percentage": 100.0,
+      "f_h_positive": 0,
+      "f_safe_violation": 0,
+      "f_depth": 0,
+      "f_unsafe_split": 0,
+      "top_n_used": 0
+    },
+    {
+      "iteration": 3,
+      "loss": 0.0,
+      "update_norm": 0.0,
+      "certified_percentage": 100.0,
+      "f_h_positive": 0,
+      "f_safe_violation": 0,
+      "f_depth": 0,
+      "f_unsafe_split": 0,
+      "top_n_used": 0
+    },
+    {
+      "iteration": 4,
+      "loss": 0.0,
+      "update_norm": 0.0,
+      "certified_percentage": 100.0,
+      "f_h_positive": 0,
+      "f_safe_violation": 0,
+      "f_depth": 0,
+      "f_unsafe_split": 0,
+      "top_n_used": 0
+    },
+    {
+      "iteration": 5,
+      "loss": 0.0,
+      "update_norm": 0.0,
+      "certified_percentage": 100.0,
+      "f_h_positive": 0,
+      "f_safe_violation": 0,
+      "f_depth": 0,
+      "f_unsafe_split": 0,
+      "top_n_used": 0
+    },
+    {
+      "iteration": 6,
+      "loss": 0.0,
+      "update_norm": 0.0,
+      "certified_percentage": 100.0,
+      "f_h_positive": 0,
+      "f_safe_violation": 0,
+      "f_depth": 0,
+      "f_unsafe_split": 0,
+      "top_n_used": 0
+    },
+    {
+      "iteration": 7,
+      "loss": 0.0,
+      "update_norm": 0.0,
+      "certified_percentage": 100.0,
+      "f_h_positive": 0,
+      "f_safe_violation": 0,
+      "f_depth": 0,
+      "f_unsafe_split": 0,
+      "top_n_used": 0
+    },
+    {
+      "iteration": 8,
+      "loss": 0.0,
+      "update_norm": 0.0,
+      "certified_percentage": 100.0,
+      "f_h_positive": 0,
+      "f_safe_violation": 0,
+      "f_depth": 0,
+      "f_unsafe_split": 0,
+      "top_n_used": 0
+    },
+    {
+      "iteration": 9,
+      "loss": 0.0,
+      "update_norm": 0.0,
+      "certified_percentage": 100.0,
+      "f_h_positive": 0,
+      "f_safe_violation": 0,
+      "f_depth": 0,
+      "f_unsafe_split": 0,
+      "top_n_used": 0
+    },
+    {
+      "iteration": 10,
+      "loss": 0.0,
+      "update_norm": 0.0,
+      "certified_percentage": 100.0,
+      "f_h_positive": 0,
+      "f_safe_violation": 0,
+      "f_depth": 0,
+      "f_unsafe_split": 0,
+      "top_n_used": 0
+    }
+  ],
+  "timestamp": "2026-04-12 16:23:57"
+}

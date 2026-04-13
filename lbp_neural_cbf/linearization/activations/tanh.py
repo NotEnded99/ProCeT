@@ -217,7 +217,11 @@ class TanhActivationRelaxation(ActivationRelaxation):
         # Shape: (size of lb, num_roots) or (batch, size of lb, num_roots) where num_roots = 3, and valid_roots_mask: (size of lb, num_roots) or (batch, size of lb, num_roots) bool
         # to indicate which entries contain valid roots (e.g. for cases with only 1 real root).
         tangent_cubic_roots, valid_roots_mask = self._solve_cubic_for_tangent(secant_slope)
-        tangent_points_x = torch.atanh(tangent_cubic_roots)
+        # Clamp to avoid gradient explosion in atanh backward: d/dx atanh(x) = 1/(1-x²)
+        # Without clamp, x near ±1 causes inf gradient -> NaN after mul by 0
+        # tangent_points_x = torch.atanh(tangent_cubic_roots.clamp(-1 + 1e-6, 1 - 1e-6))
+        tangent_points_x = torch.atanh(tangent_cubic_roots)  
+
         in_range = (tangent_points_x > lb.unsqueeze(-1)) & (tangent_points_x < ub.unsqueeze(-1)) & valid_roots_mask
 
         # First column with true value in each row, or in_range.size(-1) if none found

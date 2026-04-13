@@ -1,0 +1,21 @@
+\section{Conclusion}
+
+We proposed a progressive depth phased repair algorithm for neural network-based control barrier functions. The key insight is that verification depth determines which violations are detectable, leading to a two-phase strategy that first repairs definitive violations at shallow depth, then progressively increases depth to address uncertain regions.
+
+Our theoretical contributions include:
+\begin{itemize}
+    \item A formal analysis of the NCBF repair problem as constrained optimization with QP projection
+    \item An unbiasedness and variance analysis for the randomized smoothing Jacobian estimator applied to CBF bounds
+    \item Convergence criteria based on plateau detection for the progressive depth strategy
+\end{itemize}
+
+Experiments on multiple dynamical systems demonstrate consistent improvement over baselines, with the progressive depth strategy providing 5-15\% gains in certified percentage.
+
+\subsection{Limitations and Future Work}
+
+Our method assumes that the dynamics $f(x)$ is Lipschitz continuous and the neural network is differentiable almost everywhere, which holds for standard activation functions but may fail for more exotic architectures. Future work includes:
+\begin{enumerate}
+    \item Extending the method to handle control-affine systems with $g(x)u$ terms
+    \item Investigating adaptive depth scheduling based on violation patterns
+    \item Combining with adversarial training for robustness
+\end{enumerate}
