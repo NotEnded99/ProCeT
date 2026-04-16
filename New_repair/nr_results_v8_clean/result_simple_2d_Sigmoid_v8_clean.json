@@ -1,0 +1,32 @@
+{
+  "system": "simple_2d",
+  "activation": "Sigmoid",
+  "method": "Harmonic Mean CBF Pass Rate (v8, 简化梯度更新)",
+  "top_n_protect": 500,
+  "max_depth_start": 10,
+  "max_depth_limit": 15,
+  "depth_schedule": [
+    10,
+    12,
+    15
+  ],
+  "num_inner_steps": 5,
+  "lr": 0.005,
+  "target_pass_rate": 100.0,
+  "plateau_threshold": 0.5,
+  "max_stagnant_iterations": 5,
+  "max_total_iterations": 30,
+  "original_max_depth_harmonic": 100.0,
+  "original_max_depth_standard": 100.0,
+  "original_max_depth_R_safe": 100.0,
+  "original_max_depth_R_unsafe": 100.0,
+  "final_harmonic_pass_rate": 100.0,
+  "final_standard_pass_rate": 100.0,
+  "final_R_safe": 100.0,
+  "final_R_unsafe": 100.0,
+  "harmonic_improvement": 0.0,
+  "standard_improvement": 0.0,
+  "num_iterations": 0,
+  "iteration_results": [],
+  "timestamp": "2026-04-14 14:50:40"
+}

@@ -364,7 +364,7 @@ def verify_cbf(
         # 保存到文件（文件名包含激活函数）
         regions_dir = "/data/mzm/mzm_Verification/verification-of-neural-cbf-mzm4/New_repair/regions"
         os.makedirs(regions_dir, exist_ok=True)
-        save_path = f"{regions_dir}/verified_regions_{dynamics_model.system_name}_{activation_fnc}.pt"
+        save_path = f"{regions_dir}/verified_regions_{dynamics_model.system_name}_{activation_fnc}_v1.pt"
 
         regions_data = {
             'V_safe': V_safe,

@@ -148,6 +148,7 @@ def main(system_type="barr1", train=True, verify=False, alpha=1.0, region_type="
             dynamics_model,
             save_path_torch=save_path_torch,
             save_path_onnx=save_path_onnx,
+            num_epochs = 8000, 
             **training_params
         )
     
@@ -160,11 +161,11 @@ def main(system_type="barr1", train=True, verify=False, alpha=1.0, region_type="
         # network_path = f"data/mine_models_relu/{dynamics_model.system_name}_cbf.onnx"
         # network_path = f"data/author_models/{dynamics_model.system_name}_cbf.onnx"
         if activation == "Tanh":
-            network_path = f"/data/mzm/mzm_Verification/verification-of-neural-cbf-mzm4/data/New_models_Hard_Tanh/{dynamics_model.system_name}_cbf.onnx"
+            network_path = f"/data/mzm/mzm_Verification/verification-of-neural-cbf-mzm4/data/New_models_Hard_Tanh_v1/{dynamics_model.system_name}_cbf.onnx"
         elif activation == "Relu":
-            network_path = f"/data/mzm/mzm_Verification/verification-of-neural-cbf-mzm4/data/New_models_Hard_Relu/{dynamics_model.system_name}_cbf.onnx"
+            network_path = f"/data/mzm/mzm_Verification/verification-of-neural-cbf-mzm4/data/New_models_Hard_Relu_v1/{dynamics_model.system_name}_cbf.onnx"
         elif activation == "Sigmoid":
-            network_path = f"/data/mzm/mzm_Verification/verification-of-neural-cbf-mzm4/data/New_models_Hard_Sigmoid/{dynamics_model.system_name}_cbf.onnx"
+            network_path = f"/data/mzm/mzm_Verification/verification-of-neural-cbf-mzm4/data/New_models_Hard_Sigmoid_v1/{dynamics_model.system_name}_cbf.onnx"
         else:
             raise ValueError(f"Unsupported activation function for verification: {activation}")
         

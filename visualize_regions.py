@@ -554,7 +554,7 @@ def main():
 
         # output_file = output_path / f'regions_{args.system}_{act}.png'
         # output_file = output_path / f'regions_{args.system}_{act}_repaired.png'
-        output_file = output_path / f'regions_{args.system}_{act}_{args.name_out}.png'
+        output_file = output_path / f'regions_{args.system}_{act}_{args.name_out}_v1.png'
 
         print(f"输出路径: {output_file}")
 

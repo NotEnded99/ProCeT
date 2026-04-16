@@ -308,8 +308,9 @@ class Barrier2System(CBFDynamicalSystem):
         # Parse unsafe set into domain object
         # self.unsafe_set_interior = CircleDomain(center=[0.7, -0.7], radius=0.3)
         self.unsafe_set_interior = UnionDomain([
-                                    CircleDomain(center=[0.7, -0.7], radius=0.3),  # 原有的
-                                    CircleDomain(center=[-0.5, 0.5], radius=0.25), # 新增的
+                                    CircleDomain(center=[0.7, -0.7], radius=0.3),   # 原有的圆
+                                    CircleDomain(center=[-0.5, 0.5], radius=0.25),  # 新增的圆
+                                    BoxDomain([[0.5, 0.9], [-1.1, -0.7]]),          # 新增的矩形，与Circle1相交（面积缩小至0.16）
                                 ])
         self.unsafe_set_exterior = BoxExteriorDomain(self.input_domain.bounds)
         self.unsafe_set = UnionDomain([self.unsafe_set_interior, self.unsafe_set_exterior])
@@ -499,9 +500,10 @@ class Barrier3System(CBFDynamicalSystem):
         # )
         self.unsafe_set_interior = UnionDomain([
                         CircleDomain(center=[-1, -1], radius=0.4),                           # 原有的圆
-                        LShapeDomain(BoxDomain([[0.4, 0.6], [0.1, 0.5]]), 
+                        LShapeDomain(BoxDomain([[0.4, 0.6], [0.1, 0.5]]),
                                     BoxDomain([[0.4, 0.8], [0.1, 0.3]])),                  # 原有的L形
-                        CircleDomain(center=[1.0, 0.0], radius=0.3),                         # 新增的
+                        CircleDomain(center=[1.0, 0.0], radius=0.3),                         # 新增的圆
+                        BoxDomain([[-1.4, -0.6], [-0.7, -0.1]]),                              # 新增的矩形，与Circle1相交（面积缩小至0.24）
                     ])
         
         self.unsafe_set_exterior = BoxExteriorDomain(self.input_domain.bounds)
@@ -609,7 +611,9 @@ class Barrier4System(CBFDynamicalSystem):
         self.input_domain = BoxDomain([[-2, 2], [-2, 2], [-1.57, 1.57]])
 
         # Parse unsafe set into domain object
-        self.unsafe_set_interior = ProductDomain([CircleDomain(center=[0.0, 0.0], radius=0.2), BoxDomain([[-1.57, 1.57]])])
+        _cylinder = ProductDomain([CircleDomain(center=[0.0, 0.0], radius=0.2), BoxDomain([[-1.57, 1.57]])])  # 原有的柱体
+        _slab = BoxDomain([[-0.2, 0.2], [0.1, 0.3], [0.5, 1.2]])                                            # 新增的3D矩形盒，与柱体相交（体积缩小至~0.056）
+        self.unsafe_set_interior = UnionDomain([_cylinder, _slab])
         self.unsafe_set_exterior = BoxExteriorDomain(self.input_domain.bounds)
         self.unsafe_set = UnionDomain([self.unsafe_set_interior, self.unsafe_set_exterior])
 

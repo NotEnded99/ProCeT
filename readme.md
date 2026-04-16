@@ -1,18 +1,36 @@
 
 
 # 训练模型：
-for sys in simple2d barr1 barr2 barr3 barr4; do     python3 experiments/barrier_certificate.py --system-type $sys --train --activation Relu --hidden-sizes '32,64,32' --save-path '/data/mzm/mzm_Verification/verification-of-neural-cbf-mzm4/data/New_models_Hard_Relu'; done
+for sys in barr1 barr2 barr3 barr4 cartpole; do     python3 experiments/barrier_certificate.py --system-type $sys --train --activation Relu --hidden-sizes '32,64,32' --save-path '/data/mzm/mzm_Verification/verification-of-neural-cbf-mzm4/data/New_models_Hard_Relu_v1'; done
+
+
+for sys in barr1 barr2 barr3 barr4; do     python3 experiments/barrier_certificate.py --system-type $sys --train --activation Tanh --hidden-sizes '32,64,32' --save-path '/data/mzm/mzm_Verification/verification-of-neural-cbf-mzm4/data/New_models_Hard_Tanh_v1'; done
+
+
+for sys in barr1 barr2 barr3 barr4 cartpole; do     python3 experiments/barrier_certificate.py --system-type $sys --train --activation Sigmoid --hidden-sizes '32,64,32' --save-path '/data/mzm/mzm_Verification/verification-of-neural-cbf-mzm4/data/New_models_Hard_Sigmoid_v1'; done
+
+
+
+hiord2 hiord4 hiord6 hiord8 rendezvousdocking
+
+for sys in rendezvousdocking; do     python3 experiments/barrier_certificate.py --system-type $sys --train --activation Tanh --hidden-sizes '32,64,32' --save-path '/data/mzm/mzm_Verification/verification-of-neural-cbf-mzm4/data/New_models_Hard_Tanh_v1'; done
+
+
+
 
 # 验证
-for sys in simple2d barr1 barr2 barr3 barr4; do     python3 experiments/barrier_certificate.py --system-type $sys --verify --activation Tanh --max-depth 15 --hidden-sizes '32,64,32'; done 
+for sys in barr1 barr2 barr3 barr4; do     python3 experiments/barrier_certificate.py --system-type $sys --verify --activation Tanh --max-depth 15 --hidden-sizes '32,64,32'; done 
 
-for sys in simple2d barr1 barr2 barr3 barr4; do     python3 experiments/barrier_certificate.py --system-type $sys --verify --activation Sigmoid --max-depth 15 --hidden-sizes '32,64,32'; done 
-
-
-for sys in simple2d barr1 barr2 barr3 barr4; do     python3 experiments/barrier_certificate.py --system-type $sys --verify --activation Relu --max-depth 15 --hidden-sizes '32,64,32'; done 
+for sys in barr1 barr2 barr3 barr4 cartpole; do     python3 experiments/barrier_certificate.py --system-type $sys --verify --activation Sigmoid --max-depth 15 --hidden-sizes '32,64,32'; done 
 
 
-python3 experiments/barrier_certificate.py --system-type simple2d --verify --activation Tanh --max-depth 10 --hidden-sizes '32,64,32'
+for sys in barr1 barr2 barr3 barr4 cartpole; do     python3 experiments/barrier_certificate.py --system-type $sys --verify --activation Relu --max-depth 15 --hidden-sizes '32,64,32'; done 
+
+
+
+for sys in rendezvousdocking; do     python3 experiments/barrier_certificate.py --system-type $sys --verify --activation Tanh --max-depth 15 --hidden-sizes '32,64,32'; done 
+
+
 
 
 
@@ -234,16 +252,32 @@ for sys in simple_2d barr1 barr2 barr3; do
 done
 
 
+# 
+
+
 for sys in simple_2d barr1 barr2 barr3; do
   for act in Sigmoid; do
-    python3 New_repair/main_v7.py -a $act -s $sys --rs-n 50 --rs-sigma 0.001 --num-inner-steps 5 --lr 5e-3 --max-depth-start 10 --max-depth-limit 15 --depth-schedule "10,12,15" --plateau-threshold 0.5 --max-stagnant-iterations 5
+    python3 New_repair/main_v8.py -a $act -s $sys --rs-n 50 --rs-sigma 0.001 --num-inner-steps 5 --lr 5e-3 --max-depth-start 10 --max-depth-limit 15 --depth-schedule "10,12,15" --plateau-threshold 0.5 --max-stagnant-iterations 5
+  done
+done
+
+
+for sys in simple_2d barr1 barr2 barr3; do
+  for act in Relu; do
+    python3 New_repair/main_v8.py -a $act -s $sys --rs-n 50 --rs-sigma 0.001 --num-inner-steps 5 --lr 5e-3 --max-depth-start 10 --max-depth-limit 15 --depth-schedule "10,12,15" --plateau-threshold 0.5 --max-stagnant-iterations 5
+  done
+done
+
+
+for sys in simple_2d barr1 barr2 barr3; do
+  for act in Tanh; do
+    python3 New_repair/main_v8.py -a $act -s $sys --rs-n 50 --rs-sigma 0.001 --num-inner-steps 5 --lr 5e-3 --max-depth-start 10 --max-depth-limit 15 --depth-schedule "10,12,15" --plateau-threshold 0.5 --max-stagnant-iterations 5
   done
 done
 
 
 
-
- 
+ # 画图
 
 for sys in simple2d ; do   for act in Relu Tanh Sigmoid; do     python visualize_regions.py --activation $act --system $sys       --path "New_repair/regions/verified_regions_simple_2d_${act}_repaired_v7.pt"       --n "repaired_v7";   done; done
 
@@ -251,7 +285,63 @@ for sys in simple2d barr1 barr2 barr3; do   for act in Relu Tanh Sigmoid; do    
 
 
 
-for sys in simple2d barr1 barr2 barr3; do   for act in Relu Tanh Sigmoid; do     python visualize_regions.py --activation $act --system $sys       --path "New_repair/regions/verified_regions_${sys}_${act}.pt"       --n "None";   done; done
+for sys in barr3; do   for act in Relu Tanh Sigmoid; do     python visualize_regions.py --activation $act --system $sys       --path "New_repair/regions/verified_regions_${sys}_${act}_repaired_v9.pt"       --n "repaired_v9";   done; done
 
 
-for sys in simple2d ; do   for act in Relu Tanh Sigmoid; do     python visualize_regions.py --activation $act --system $sys       --path "New_repair/regions/verified_regions_simple_2d_${act}_repaired_v7.pt"       --n "repaired_v7";   done; done
+for sys in simple2d ; do   for act in Relu Tanh Sigmoid; do     python visualize_regions.py --activation $act --system $sys       --path "New_repair/regions/verified_regions_simple_2d_${act}_repaired_v9.pt"       --n "repaired_v9";   done; done
+
+
+
+for sys in barr1 barr2 barr3 ; do   for act in Relu Tanh Sigmoid; do     python visualize_regions.py --activation $act --system $sys       --path "New_repair/regions/verified_regions_${sys}_${act}_v1.pt"       --n "None";   done; done
+
+
+
+for sys in barr1 barr2 barr3; do   for act in Relu Tanh Sigmoid; do     python visualize_regions.py --activation $act --system $sys       --path "New_repair/regions/verified_regions_${sys}_${act}_repaired_v8_clean.pt"       --n "repaired_v8_clean";   done; done
+
+# main_clean_v8
+for sys in barr1 barr2 barr3; do
+  for act in Sigmoid; do
+    python3 New_repair/main_clean_v8.py -a $act -s $sys --num-inner-steps 5 --lr 5e-3 --max-depth-start 10 --max-depth-limit 15 --depth-schedule "10,12,15" --plateau-threshold 0.5 --max-stagnant-iterations 5
+  done
+done
+
+
+for sys in barr1 barr2 barr3; do
+  for act in Tanh; do
+    python3 New_repair/main_clean_v8.py -a $act -s $sys --num-inner-steps 5 --lr 5e-3 --max-depth-start 10 --max-depth-limit 15 --depth-schedule "10,12,15" --plateau-threshold 0.5 --max-stagnant-iterations 5
+  done
+done
+
+
+for sys in barr1 barr2 barr3; do
+  for act in Relu; do
+    python3 New_repair/main_clean_v8.py -a $act -s $sys --num-inner-steps 5 --lr 5e-3 --max-depth-start 10 --max-depth-limit 15 --depth-schedule "10,12,15" --plateau-threshold 0.5 --max-stagnant-iterations 5
+  done
+done
+
+
+
+
+# main_v9
+for sys in barr1 barr2 barr3; do
+  for act in Sigmoid; do
+    python3 New_repair/main_v9.py -a $act -s $sys --rs-n 50 --rs-sigma 0.001 --num-inner-steps 1 --lr 5e-3 --max-depth-start 10 --max-depth-limit 15 --depth-schedule "10,12,15" --plateau-threshold 0.5 --max-stagnant-iterations 5
+  done
+done
+
+
+for sys in barr1 barr2 barr3; do
+  for act in Tanh; do
+    python3 New_repair/main_v9.py -a $act -s $sys --rs-n 50 --rs-sigma 0.001 --num-inner-steps 1 --lr 5e-3 --max-depth-start 10 --max-depth-limit 15 --depth-schedule "10,12,15" --plateau-threshold 0.5 --max-stagnant-iterations 5
+  done
+done
+
+
+
+for sys in barr1 barr2 barr3; do
+  for act in Relu; do
+    python3 New_repair/main_v9.py -a $act -s $sys --rs-n 50 --rs-sigma 0.001 --num-inner-steps 1 --lr 5e-3 --max-depth-start 10 --max-depth-limit 15 --depth-schedule "10,12,15" --plateau-threshold 0.5 --max-stagnant-iterations 5
+  done
+done
+
+
