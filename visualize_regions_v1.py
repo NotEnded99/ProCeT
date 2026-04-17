@@ -46,6 +46,7 @@ SYSTEMS = {
     'simple2d': ('simple_2d', 'simple_2d')
 }
 
+
 # 支持的激活函数
 ACTIVATIONS = ['Tanh', 'Relu', 'Sigmoid']
 

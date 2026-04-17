@@ -216,7 +216,7 @@ def main():
     manual_dirs = [
         # ('data/author_models', 'author'),      # 作者提供的模型
         # ('data/mine_models_relu', 'relu1'),   # 取消注释以添加更多目录
-        ('New_repair/regions', 'relu_repaired'),     # ReLU激活函数训练的模型
+        ('New_repair/regions', '_cbf_repaired_v8_ibp'),     # ReLU激活函数训练的模型
         # ('data/mine2_models_relu', 'relu2'),   # 取消注释以添加更多目录
     ]
 
@@ -226,7 +226,7 @@ def main():
     # 指定要可视化的系统
     # 可选值: 'barr1', 'barr2', 'barr3', 'barr4', 'simple_2d', 'hiord2'
     # 设为 None 表示使用默认（排除 barr4 和 hiord2）
-    manual_systems = ['barr3']  # 手动指定系统列表
+    manual_systems = ['barr1']  # 手动指定系统列表
     # manual_systems = None  # 取消注释此行使用默认设置
 
     # 输出目录
@@ -289,7 +289,7 @@ def main():
         print(f"{'='*70}")
 
         for system_name, config in systems_2d.items():
-            model_file = model_path / f"{system_name}_cbf_repaired_iter4.pth"
+            model_file = model_path / f"{system_name}_Tanh_cbf_repaired_v8_ibp.pth"
 
             if not model_file.exists():
                 print(f"\n  Model not found: {model_file}")

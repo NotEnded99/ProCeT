@@ -298,6 +298,12 @@ for sys in barr1 barr2 barr3 ; do   for act in Relu Tanh Sigmoid; do     python 
 
 for sys in barr1 barr2 barr3; do   for act in Relu Tanh Sigmoid; do     python visualize_regions.py --activation $act --system $sys       --path "New_repair/regions/verified_regions_${sys}_${act}_repaired_v8_clean.pt"       --n "repaired_v8_clean";   done; done
 
+
+
+
+
+
+
 # main_clean_v8
 for sys in barr1 barr2 barr3; do
   for act in Sigmoid; do
@@ -345,3 +351,12 @@ for sys in barr1 barr2 barr3; do
 done
 
 
+
+
+# main_clean_v8_ibp.py 
+
+
+python3 New_repair/main_clean_v8_ibp.py -a Tanh -s barr1 --num-inner-steps 1 --lr 5e-3 --max-depth-start 10 --max-depth-limit 15 --depth-schedule "10,12,15" --plateau-threshold 0.5 --max-stagnant-iterations 5
+
+
+for sys in barr1; do   for act in Tanh; do     python visualize_regions.py --activation $act --system $sys       --path "New_repair/regions/verified_regions_${sys}_${act}_repaired_v8_ibp.pt"       --n "repaired_v8_ibp";   done; done
