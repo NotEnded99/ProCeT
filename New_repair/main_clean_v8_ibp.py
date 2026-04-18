@@ -68,7 +68,7 @@ def pytorch_to_onnx(model, onnx_path, input_dim=2):
     )
 
 
-def verify_model(model, dynamics_model, max_depth=13):
+def verify_model(model, dynamics_model, max_depth=13, model_path=None):
     """
     使用 IBPVerifier 对模型进行验证
 
@@ -76,10 +76,11 @@ def verify_model(model, dynamics_model, max_depth=13):
         model: 已加载的 BarrierNN 模型
         dynamics_model: 动力学系统模型
         max_depth: 最大分裂深度
+        model_path: 模型文件路径 (.pth 格式)，用于 IBPVerifier 初始化
 
     Returns:
         验证结果字典，包含 V_safe, V_unsafe, F_h_positive_in_unsafe,
-        F_safe_cbf_violation, F_depth_limit_reached, F_unsafe_cannot_split 等
+        F_safe_cbf_violation, F_depth_limit_reached_unsafe, F_depth_limit_reached_safe, F_unsafe_cannot_split 等
     """
     device = next(model.parameters()).device
 
@@ -89,7 +90,8 @@ def verify_model(model, dynamics_model, max_depth=13):
         dynamics_model=dynamics_model,
         device=device,
         dtype=torch.float32,
-        max_depth=max_depth
+        max_depth=max_depth,
+        model_path=model_path
     )
 
     results = verifier.verify_model(None, max_depth=max_depth)
@@ -126,22 +128,22 @@ def compute_total_volume(simplices_list):
 
 def compute_safety_metrics_v8(
     V_safe, V_unsafe, F_h_positive_in_unsafe, F_safe_cbf_violation,
-    F_depth_limit_reached, F_unsafe_cannot_split,
+    F_depth_limit_reached_unsafe, F_depth_limit_reached_safe, F_unsafe_cannot_split,
 ):
     """v8版本：计算基于调和平均的综合安全指标"""
     volume_v_safe = compute_total_volume(V_safe)
     volume_v_unsafe = compute_total_volume(V_unsafe)
     volume_f_h = compute_total_volume(F_h_positive_in_unsafe)
     volume_f_safe_violation = compute_total_volume(F_safe_cbf_violation)
-    volume_f_depth = compute_total_volume(F_depth_limit_reached)
+    volume_f_depth_unsafe = compute_total_volume(F_depth_limit_reached_unsafe)
+    volume_f_depth_safe = compute_total_volume(F_depth_limit_reached_safe)
     volume_f_unsafe_split = compute_total_volume(F_unsafe_cannot_split)
 
-    total_volume = volume_v_safe + volume_v_unsafe + volume_f_h + volume_f_safe_violation + volume_f_depth + volume_f_unsafe_split
-    total_uncertain_volume = volume_f_depth + volume_f_unsafe_split
-    uncertain_half = total_uncertain_volume / 2.0
+    total_volume = volume_v_safe + volume_v_unsafe + volume_f_h + volume_f_safe_violation + volume_f_depth_unsafe + volume_f_depth_safe + volume_f_unsafe_split
+    total_uncertain_volume = volume_f_depth_unsafe + volume_f_depth_safe + volume_f_unsafe_split
 
-    true_safe_volume = volume_v_safe + volume_f_safe_violation + uncertain_half
-    true_unsafe_volume = volume_v_unsafe + volume_f_h + uncertain_half
+    true_safe_volume = volume_v_safe + volume_f_safe_violation + volume_f_depth_unsafe
+    true_unsafe_volume = volume_v_unsafe + volume_f_h + volume_f_depth_safe
 
     R_safe = volume_v_safe / true_safe_volume if true_safe_volume > 0 else 0.0
     R_unsafe = volume_v_unsafe / true_unsafe_volume if true_unsafe_volume > 0 else 0.0
@@ -162,9 +164,10 @@ def compute_safety_metrics_v8(
         'total_volume': total_volume,
         'volumes': {
             'V_safe': volume_v_safe, 'V_unsafe': volume_v_unsafe, 'F_h': volume_f_h,
-            'F_safe_violation': volume_f_safe_violation, 'F_depth': volume_f_depth,
+            'F_safe_violation': volume_f_safe_violation,
+            'F_depth_unsafe': volume_f_depth_unsafe, 'F_depth_safe': volume_f_depth_safe,
             'F_unsafe_split': volume_f_unsafe_split, 'total_uncertain': total_uncertain_volume,
-            'uncertain_half': uncertain_half,
+            # 'uncertain_half': uncertain_half,
         }
     }
 
@@ -206,19 +209,19 @@ def select_top_n_v_safe_ibp(model, V_safe, dynamics_model, translator, top_n, cb
     return [V_safe[i] for i in selected_indices]
 
 
-def select_repair_targets(F_h_positive_in_unsafe, F_safe_cbf_violation, F_depth_limit_reached, F_unsafe_cannot_split, current_phase):
+def select_repair_targets(F_h_positive_in_unsafe, F_safe_cbf_violation, F_depth_limit_reached_unsafe, F_depth_limit_reached_safe, F_unsafe_cannot_split, current_phase):
     if current_phase == 1:
         return list(F_safe_cbf_violation), list(F_h_positive_in_unsafe), "Phase1_Definitive"
     else:
-        return (list(F_safe_cbf_violation) + list(F_depth_limit_reached)), \
-               (list(F_h_positive_in_unsafe) + list(F_unsafe_cannot_split)), "Phase2_All"
+        return (list(F_safe_cbf_violation) + list(F_depth_limit_reached_safe)), \
+               (list(F_h_positive_in_unsafe) + list(F_unsafe_cannot_split) + list(F_depth_limit_reached_unsafe)), "Phase2_All"
 
 
-def check_stop_criteria(F_h_positive_in_unsafe, F_safe_cbf_violation, F_depth_limit_reached, F_unsafe_cannot_split,
+def check_stop_criteria(F_h_positive_in_unsafe, F_safe_cbf_violation, F_depth_limit_reached_unsafe, F_depth_limit_reached_safe, F_unsafe_cannot_split,
                         current_max_depth, max_depth_limit, phase2_improvement_history,
                         min_improvement_threshold=0.5, max_stagnant_iterations=3,
                         first_max_depth_pass_rate=None, at_max_depth_consecutive_no_improve=0):
-    total_fail = len(F_h_positive_in_unsafe) + len(F_safe_cbf_violation) + len(F_depth_limit_reached) + len(F_unsafe_cannot_split)
+    total_fail = len(F_h_positive_in_unsafe) + len(F_safe_cbf_violation) + len(F_depth_limit_reached_unsafe) + len(F_depth_limit_reached_safe) + len(F_unsafe_cannot_split)
     if total_fail == 0:
         return True, "ALL_CERTIFIED"
     if current_max_depth >= max_depth_limit:
@@ -330,12 +333,13 @@ def main():
     V_unsafe_init = regions_data['V_unsafe']
     F_h_positive_in_unsafe_init = regions_data['F_h_positive_in_unsafe']
     F_safe_cbf_violation_init = regions_data['F_safe_cbf_violation']
-    F_depth_limit_reached_init = regions_data['F_depth_limit_reached']
+    F_depth_limit_reached_unsafe_init = regions_data.get('F_depth_limit_reached_unsafe', regions_data.get('F_depth_limit_reached', []))
+    F_depth_limit_reached_safe_init = regions_data.get('F_depth_limit_reached_safe', [])
     F_unsafe_cannot_split_init = regions_data['F_unsafe_cannot_split']
 
-    total_fail = len(F_h_positive_in_unsafe_init) + len(F_safe_cbf_violation_init) + len(F_depth_limit_reached_init) + len(F_unsafe_cannot_split_init)
+    total_fail = len(F_h_positive_in_unsafe_init) + len(F_safe_cbf_violation_init) + len(F_depth_limit_reached_unsafe_init) + len(F_depth_limit_reached_safe_init) + len(F_unsafe_cannot_split_init)
 
-    original_safety_metrics = compute_safety_metrics_v8(V_safe_init, V_unsafe_init, F_h_positive_in_unsafe_init, F_safe_cbf_violation_init, F_depth_limit_reached_init, F_unsafe_cannot_split_init)
+    original_safety_metrics = compute_safety_metrics_v8(V_safe_init, V_unsafe_init, F_h_positive_in_unsafe_init, F_safe_cbf_violation_init, F_depth_limit_reached_unsafe_init, F_depth_limit_reached_safe_init, F_unsafe_cannot_split_init)
     original_max_depth_harmonic = original_safety_metrics['HarmonicMeanPassRate'] * 100
     original_max_depth_standard = original_safety_metrics['standard_pass_rate']
     original_max_depth_R_safe = original_safety_metrics['R_safe'] * 100
@@ -381,12 +385,13 @@ def main():
     torch.save(model.state_dict(), pytorch_save_path)
     onnx_path = f"New_repair/regions/{dynamics_model.system_name}_{activation}_cbf_repaired_v8_ibp.onnx"
     pytorch_to_onnx(model, onnx_path, input_dim=dynamics_model.input_dim)
-    start_depth_results = verify_model(model, dynamics_model, max_depth=max_depth_start)
+    start_depth_results = verify_model(model, dynamics_model, max_depth=max_depth_start, model_path=pytorch_save_path)
 
     start_depth_safety_metrics = compute_safety_metrics_v8(
         start_depth_results.get('V_safe', []), start_depth_results.get('V_unsafe', []),
         start_depth_results.get('F_h_positive_in_unsafe', []), start_depth_results.get('F_safe_cbf_violation', []),
-        start_depth_results.get('F_depth_limit_reached', []), start_depth_results.get('F_unsafe_cannot_split', []),
+        start_depth_results.get('F_depth_limit_reached_unsafe', []), start_depth_results.get('F_depth_limit_reached_safe', []),
+        start_depth_results.get('F_unsafe_cannot_split', []),
     )
 
     initial_harmonic_pass_rate = start_depth_safety_metrics['HarmonicMeanPassRate'] * 100
@@ -407,10 +412,10 @@ def main():
 
     for iteration in range(max_total_iterations):
         definitive_fail = len(F_h_positive_in_unsafe_init) + len(F_safe_cbf_violation_init)
-        uncertain_fail = len(F_depth_limit_reached_init) + len(F_unsafe_cannot_split_init)
+        uncertain_fail = len(F_depth_limit_reached_unsafe_init) + len(F_depth_limit_reached_safe_init) + len(F_unsafe_cannot_split_init)
 
         stop, stop_reason = check_stop_criteria(
-            F_h_positive_in_unsafe_init, F_safe_cbf_violation_init, F_depth_limit_reached_init, F_unsafe_cannot_split_init,
+            F_h_positive_in_unsafe_init, F_safe_cbf_violation_init, F_depth_limit_reached_unsafe_init, F_depth_limit_reached_safe_init, F_unsafe_cannot_split_init,
             current_max_depth, max_depth_limit, phase2_improvement_history,
             plateau_threshold, max_stagnant_iterations, first_max_depth_pass_rate, at_max_depth_consecutive_no_improve,
         )
@@ -424,7 +429,7 @@ def main():
         print(f"\n[迭代 {iteration+1}] depth_reason={depth_reason}, max_depth {current_max_depth}->{next_max_depth}, phase {current_phase}->{next_phase}")
 
         failed_safe_simplices, failed_unsafe_simplices, repair_type = select_repair_targets(
-            F_h_positive_in_unsafe_init, F_safe_cbf_violation_init, F_depth_limit_reached_init, F_unsafe_cannot_split_init, current_phase,
+            F_h_positive_in_unsafe_init, F_safe_cbf_violation_init, F_depth_limit_reached_unsafe_init, F_depth_limit_reached_safe_init, F_unsafe_cannot_split_init, current_phase,
         )
 
         if len(failed_safe_simplices) == 0 and len(failed_unsafe_simplices) == 0:
@@ -490,11 +495,14 @@ def main():
         onnx_path = f"New_repair/regions/{dynamics_model.system_name}_{activation}_cbf_repaired_v8_ibp.onnx"
         pytorch_to_onnx(model, onnx_path, input_dim=dynamics_model.input_dim)
 
-        results = verify_model(model, dynamics_model, max_depth=current_max_depth)
+        results = verify_model(model, dynamics_model, max_depth=current_max_depth, model_path=pytorch_save_path)
+
+
         safety_metrics = compute_safety_metrics_v8(
             results.get('V_safe', []), results.get('V_unsafe', []),
             results.get('F_h_positive_in_unsafe', []), results.get('F_safe_cbf_violation', []),
-            results.get('F_depth_limit_reached', []), results.get('F_unsafe_cannot_split', []),
+            results.get('F_depth_limit_reached_unsafe', []), results.get('F_depth_limit_reached_safe', []),
+            results.get('F_unsafe_cannot_split', []),
         )
 
         certified_percentage = safety_metrics['HarmonicMeanPassRate'] * 100
@@ -521,7 +529,8 @@ def main():
             'V_safe': results.get('V_safe', V_safe_init), 'V_unsafe': results.get('V_unsafe', V_unsafe_init),
             'F_h_positive_in_unsafe': results.get('F_h_positive_in_unsafe', F_h_positive_in_unsafe_init),
             'F_safe_cbf_violation': results.get('F_safe_cbf_violation', F_safe_cbf_violation_init),
-            'F_depth_limit_reached': results.get('F_depth_limit_reached', F_depth_limit_reached_init),
+            'F_depth_limit_reached_unsafe': results.get('F_depth_limit_reached_unsafe', F_depth_limit_reached_unsafe_init),
+            'F_depth_limit_reached_safe': results.get('F_depth_limit_reached_safe', F_depth_limit_reached_safe_init),
             'F_unsafe_cannot_split': results.get('F_unsafe_cannot_split', F_unsafe_cannot_split_init),
             'Certified percentage': certified_percentage,
         }
@@ -532,7 +541,8 @@ def main():
         V_unsafe_init = updated_data['V_unsafe']
         F_h_positive_in_unsafe_init = updated_data['F_h_positive_in_unsafe']
         F_safe_cbf_violation_init = updated_data['F_safe_cbf_violation']
-        F_depth_limit_reached_init = updated_data['F_depth_limit_reached']
+        F_depth_limit_reached_unsafe_init = updated_data['F_depth_limit_reached_unsafe']
+        F_depth_limit_reached_safe_init = updated_data['F_depth_limit_reached_safe']
         F_unsafe_cannot_split_init = updated_data['F_unsafe_cannot_split']
 
         definitive_fail_new = len(F_h_positive_in_unsafe_init) + len(F_safe_cbf_violation_init)
@@ -547,7 +557,8 @@ def main():
             'HarmonicMeanPassRate': certified_percentage, 'R_safe': R_safe_pct, 'R_unsafe': R_unsafe_pct,
             'standard_pass_rate': safety_metrics['standard_pass_rate'],
             'f_h_positive': len(F_h_positive_in_unsafe_init), 'f_safe_violation': len(F_safe_cbf_violation_init),
-            'f_depth': len(F_depth_limit_reached_init), 'f_unsafe_split': len(F_unsafe_cannot_split_init),
+            'f_depth_unsafe': len(F_depth_limit_reached_unsafe_init), 'f_depth_safe': len(F_depth_limit_reached_safe_init),
+            'f_unsafe_split': len(F_unsafe_cannot_split_init),
             'definitive_fail': definitive_fail_new,
             'top_n_used': top_n_used if 'top_n_used' in dir() else 0,
             'repair_type': repair_type if 'repair_type' in dir() else 'N/A',

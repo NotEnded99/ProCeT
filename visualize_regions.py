@@ -1,16 +1,17 @@
 """
 可视化验证区域：绘制 V_safe, V_unsafe, F_h_positive_in_unsafe, F_safe_cbf_violation,
-F_depth_limit_reached, F_unsafe_cannot_split 等六类区域
+F_depth_limit_reached_unsafe, F_depth_limit_reached_safe, F_unsafe_cannot_split 等七类区域
 
 这个脚本从 verified_regions_{system_name}_{activation}.pt 加载验证结果，
-并绘制所有六类区域的单纯形分布。
+并绘制所有七类区域的单纯形分布。
 
 区域类型说明：
 - V_safe: 安全区中验证通过的单纯形 (SAT, safe_cbf_verified)
 - V_unsafe: 障碍区中验证通过的单纯形 (SAT, unsafe_region)
 - F_h_positive_in_unsafe: 障碍区内 h(x) >= 0 的违规 (UNSAT)
 - F_safe_cbf_violation: 安全区内 CBF 条件违规 (UNSAT)
-- F_depth_limit_reached: 达到最大分裂深度 (UNSAT)
+- F_depth_limit_reached_unsafe: unsafe区域达到最大分裂深度 (UNSAT)
+- F_depth_limit_reached_safe: safe区域达到最大分裂深度 (UNSAT)
 - F_unsafe_cannot_split: 障碍区无法继续细分 (UNSAT)
 """
 
@@ -70,13 +71,20 @@ def load_regions(regions_path, device='cpu'):
         'V_unsafe': [],
         'F_h_positive_in_unsafe': [],
         'F_safe_cbf_violation': [],
-        'F_depth_limit_reached': [],
+        'F_depth_limit_reached_unsafe': [],
+        'F_depth_limit_reached_safe': [],
         'F_unsafe_cannot_split': []
     }
 
     for key in regions.keys():
         if key in data and data[key] is not None:
             regions[key] = data[key]
+
+    # 兼容旧的 F_depth_limit_reached 字段（拆分为 _unsafe 和 _safe）
+    if 'F_depth_limit_reached' in data and data['F_depth_limit_reached'] is not None:
+        # 旧数据直接放入 _unsafe（保守处理）
+        if not regions['F_depth_limit_reached_unsafe']:
+            regions['F_depth_limit_reached_unsafe'] = data['F_depth_limit_reached']
 
     # 同时兼容旧的 F_safe 和 F_unsafe 字段名
     if 'F_safe' in data and data['F_safe'] is not None:
@@ -194,7 +202,8 @@ def plot_verification_regions(
         'V_unsafe': len(regions['V_unsafe']),
         'F_h_positive_in_unsafe': len(regions['F_h_positive_in_unsafe']),
         'F_safe_cbf_violation': len(regions['F_safe_cbf_violation']),
-        'F_depth_limit_reached': len(regions['F_depth_limit_reached']),
+        'F_depth_limit_reached_unsafe': len(regions['F_depth_limit_reached_unsafe']),
+        'F_depth_limit_reached_safe': len(regions['F_depth_limit_reached_safe']),
         'F_unsafe_cannot_split': len(regions['F_unsafe_cannot_split'])
     }
 
@@ -203,7 +212,8 @@ def plot_verification_regions(
     total_failed = sum([
         stats['F_h_positive_in_unsafe'],
         stats['F_safe_cbf_violation'],
-        stats['F_depth_limit_reached'],
+        stats['F_depth_limit_reached_unsafe'],
+        stats['F_depth_limit_reached_safe'],
         stats['F_unsafe_cannot_split']
     ])
     total = total_verified + total_failed
@@ -216,7 +226,8 @@ def plot_verification_regions(
             f"V_unsafe (Verified Unsafe): {stats['V_unsafe']}\n"
             f"F_h_pos_in_unsafe: {stats['F_h_positive_in_unsafe']}\n"
             f"F_safe_cbf_violation: {stats['F_safe_cbf_violation']}\n"
-            f"F_depth_limit_reached: {stats['F_depth_limit_reached']}\n"
+            f"F_depth_limit_unsafe: {stats['F_depth_limit_reached_unsafe']}\n"
+            f"F_depth_limit_safe: {stats['F_depth_limit_reached_safe']}\n"
             f"F_unsafe_cannot_split: {stats['F_unsafe_cannot_split']}\n"
             f"{'='*20}\n"
             f"Verified: {total_verified} ({pass_rate:.2f}%)\n"
@@ -232,7 +243,8 @@ def plot_verification_regions(
         'V_unsafe': ('blue', 'darkblue'),
         'F_h_positive_in_unsafe': ('purple', 'indigo'),
         'F_safe_cbf_violation': ('red', 'darkred'),
-        'F_depth_limit_reached': ('orange', 'darkorange'),
+        'F_depth_limit_reached_unsafe': ('orange', 'darkorange'),
+        'F_depth_limit_reached_safe': ('gold', 'goldenrod'),
         'F_unsafe_cannot_split': ('brown', 'saddlebrown')
     }
 
@@ -260,7 +272,7 @@ def plot_verification_regions(
         draw_regions('V_unsafe')
     elif plot_type == 'failed':
         for key in ['F_h_positive_in_unsafe', 'F_safe_cbf_violation',
-                    'F_depth_limit_reached', 'F_unsafe_cannot_split']:
+                    'F_depth_limit_reached_unsafe', 'F_depth_limit_reached_safe', 'F_unsafe_cannot_split']:
             draw_regions(key)
     elif plot_type == 'failed_only':
         # 只绘制 F_safe_cbf_violation 和 F_h_positive_in_unsafe
@@ -277,8 +289,10 @@ def plot_verification_regions(
               label=f'F_h_pos_in_unsafe (n={stats["F_h_positive_in_unsafe"]})'),
         Patch(facecolor=colors['F_safe_cbf_violation'][0], edgecolor=colors['F_safe_cbf_violation'][1], alpha=alpha,
               label=f'F_safe_cbf_violation (n={stats["F_safe_cbf_violation"]})'),
-        Patch(facecolor=colors['F_depth_limit_reached'][0], edgecolor=colors['F_depth_limit_reached'][1], alpha=alpha,
-              label=f'F_depth_limit (n={stats["F_depth_limit_reached"]})'),
+        Patch(facecolor=colors['F_depth_limit_reached_unsafe'][0], edgecolor=colors['F_depth_limit_reached_unsafe'][1], alpha=alpha,
+              label=f'F_depth_limit_unsafe (n={stats["F_depth_limit_reached_unsafe"]})'),
+        Patch(facecolor=colors['F_depth_limit_reached_safe'][0], edgecolor=colors['F_depth_limit_reached_safe'][1], alpha=alpha,
+              label=f'F_depth_limit_safe (n={stats["F_depth_limit_reached_safe"]})'),
         Patch(facecolor=colors['F_unsafe_cannot_split'][0], edgecolor=colors['F_unsafe_cannot_split'][1], alpha=alpha,
               label=f'F_unsafe_cannot_split (n={stats["F_unsafe_cannot_split"]})'),
     ]
@@ -404,7 +418,7 @@ def main():
     """主函数"""
     parser = argparse.ArgumentParser(
         description='可视化 CBF 验证区域 (V_safe, V_unsafe, F_h_positive_in_unsafe, '
-                    'F_safe_cbf_violation, F_depth_limit_reached, F_unsafe_cannot_split)',
+                    'F_safe_cbf_violation, F_depth_limit_reached_unsafe, F_depth_limit_reached_safe, F_unsafe_cannot_split)',
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument(
@@ -474,7 +488,7 @@ def main():
     parser.add_argument(
         '--failed-only', '-f',
         action='store_true',
-        help='只绘制失败区域（F_safe_cbf_violation, F_h_positive_in_unsafe）'
+        help='只绘制失败区域（F_safe_cbf_violation, F_h_positive_in_unsafe, F_depth_limit_reached_unsafe, F_depth_limit_reached_safe）'
     )
 
     parser.add_argument(
@@ -518,16 +532,17 @@ def main():
         if stats:
             print("\n统计汇总:")
             print(f"{'Label':<10} {'V_safe':<10} {'V_unsafe':<10} "
-                  f"{'F_h+':<10} {'F_safe':<10} {'F_depth':<10} "
+                  f"{'F_h+':<10} {'F_safe':<10} {'F_d_unsafe':<10} {'F_d_safe':<10} "
                   f"{'F_split':<10} {'通过率':<10}")
-            print("-" * 80)
+            print("-" * 100)
             for label, s, act in stats:
                 total_verified = s['V_safe'] + s['V_unsafe']
                 total = sum(s.values())
                 pass_rate = 100 * total_verified / total if total > 0 else 0
                 print(f"{label:<10} {s['V_safe']:<10} {s['V_unsafe']:<10} "
                       f"{s['F_h_positive_in_unsafe']:<10} {s['F_safe_cbf_violation']:<10} "
-                      f"{s['F_depth_limit_reached']:<10} {s['F_unsafe_cannot_split']:<10} "
+                      f"{s['F_depth_limit_reached_unsafe']:<10} {s['F_depth_limit_reached_safe']:<10} "
+                      f"{s['F_unsafe_cannot_split']:<10} "
                       f"{pass_rate:<10.2f}%")
 
     elif args.path:
@@ -577,7 +592,8 @@ def main():
         total_failed = sum([
             stats['F_h_positive_in_unsafe'],
             stats['F_safe_cbf_violation'],
-            stats['F_depth_limit_reached'],
+            stats['F_depth_limit_reached_unsafe'],
+            stats['F_depth_limit_reached_safe'],
             stats['F_unsafe_cannot_split']
         ])
         total = total_verified + total_failed
@@ -587,7 +603,8 @@ def main():
         print(f"  V_unsafe (验证通过-障碍区): {stats['V_unsafe']}")
         print(f"  F_h_positive_in_unsafe (障碍区h>=0违规): {stats['F_h_positive_in_unsafe']}")
         print(f"  F_safe_cbf_violation (安全区CBF违规): {stats['F_safe_cbf_violation']}")
-        print(f"  F_depth_limit_reached (达到深度限制): {stats['F_depth_limit_reached']}")
+        print(f"  F_depth_limit_reached_unsafe (unsafe达到深度限制): {stats['F_depth_limit_reached_unsafe']}")
+        print(f"  F_depth_limit_reached_safe (safe达到深度限制): {stats['F_depth_limit_reached_safe']}")
         print(f"  F_unsafe_cannot_split (障碍区无法细分): {stats['F_unsafe_cannot_split']}")
         print(f"  总区域数: {total}")
         print(f"  验证通过率: {certified_percentage:.4f}%" if certified_percentage is not None else "  验证通过率: N/A")

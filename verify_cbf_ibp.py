@@ -18,6 +18,7 @@ from typing import List, Tuple, Union, Optional
 from dataclasses import dataclass
 import time
 import itertools
+import types
 
 import numpy as np
 import torch
@@ -759,13 +760,14 @@ def compute_simplex_bound_batch_ibp(
 # 9. IBP Verifier Class (Complete Implementation)
 # =============================================================================
 
-def _ibp_handle_split(sample, start_time, results, sample_idx, min_volume, split_type, unsat_type, max_depth=None):
+def _ibp_handle_split(sample, start_time, results, sample_idx, min_volume, split_type, unsat_type, max_depth=None, depth_limit_type=None):
     """Record a MAYBE result via splitting or an UNSAT counterexample if splitting is not possible or depth limited."""
     # Check if maximum depth is reached
     if max_depth is not None and sample.depth >= max_depth:
         counterexample = sample.center
         from lbp_neural_cbf.certification_results import SampleResultUNSAT
-        results[sample_idx] = SampleResultUNSAT(sample, start_time, [counterexample], result_type="depth_limit_reached")
+        result_type = depth_limit_type if depth_limit_type is not None else "depth_limit_reached"
+        results[sample_idx] = SampleResultUNSAT(sample, start_time, [counterexample], result_type=result_type)
         return
 
     if sample._compute_volume() > min_volume:
@@ -789,13 +791,13 @@ def verify_batch_ibp(batch, dynamics_model, lbp_linearizer, device, dtype, min_v
     - IBP for min_L: CBF condition lower bound via Interval Bound Propagation
       This avoids the 1/(u-l) slope issues in LBP
 
-    CBF verification theory with 6 cases:
+    CBF verification theory with 7 cases:
     Case 1: h_max < 0 -> SAT -> V_unsafe (unsafe region verified)
     Case 2a: unsafe & h_min >= 0 -> UNSAT -> F_h_positive_in_unsafe (h positive in unsafe = violation)
-    Case 2b: unsafe & h_min < 0 -> MAYBE -> split or depth_limit_reached
+    Case 2b: unsafe & h_min < 0 -> MAYBE -> split or depth_limit_reached_unsafe (unsafe region with boundary)
     Case 3: safe region with min_L >= -1e-12 -> SAT -> V_safe
     Case 3b: safe region with min_L < -1e-12 & counterexample -> UNSAT -> F_safe_cbf_violation
-    Case 3c: safe region with min_L < -1e-12 & no counterexample -> MAYBE -> split or depth_limit_reached
+    Case 3c: safe region with min_L < -1e-12 & no counterexample -> MAYBE -> split or depth_limit_reached_safe (safe region with uncertain CBF condition)
 
     Args:
         batch: List of region samples
@@ -847,6 +849,7 @@ def verify_batch_ibp(batch, dynamics_model, lbp_linearizer, device, dtype, min_v
                     split_type="case_1_boundary_unsafe",
                     unsat_type="unsafe_cannot_split",
                     max_depth=max_depth,
+                    depth_limit_type="depth_limit_reached_unsafe",
                 )
 
         # Case 3: safe region (does not intersect unsafe set)
@@ -890,9 +893,95 @@ def verify_batch_ibp(batch, dynamics_model, lbp_linearizer, device, dtype, min_v
                 split_type="case_2_cbf_failure",
                 unsat_type="safe_cbf_violation",
                 max_depth=max_depth,
+                depth_limit_type="depth_limit_reached_safe",
             )
 
     return results
+
+
+class IBPVerificationStrategy:
+    """
+    Verification strategy for CBF conditions using IBP bounds.
+
+    This class mirrors the structure of CBFVerificationStrategy but uses
+    Interval Bound Propagation (IBP) for min_L computation instead of
+    McCormick envelopes.
+    """
+
+    def __init__(self, model_path, dynamics_model, use_gpu=True, max_depth=None):
+        self.model_path = model_path
+        self.dynamics_model = dynamics_model
+        self.use_gpu = use_gpu
+        self.max_depth = max_depth
+
+    def initialize_worker(self):
+        """Initialize the PyTorch model and linearizers for each worker process."""
+        global _LOCAL_IBP
+
+        device = torch.device("cuda" if (self.use_gpu and torch.cuda.is_available()) else "cpu")
+        dtype = torch.float32
+
+        pth_path = self.model_path.replace(".onnx", ".pth")
+        activation_fnc = getattr(self.dynamics_model, 'activation_fnc', 'Tanh')
+
+        from lbp_neural_cbf.cbf.network import BarrierNN
+        _LOCAL_IBP.torch_model = BarrierNN(
+            input_size=self.dynamics_model.input_dim,
+            hidden_sizes=self.dynamics_model.hidden_sizes,
+            activation_fnc=activation_fnc,
+            device=device,
+        )
+        _LOCAL_IBP.torch_model.load_state_dict(torch.load(pth_path, map_location=device, weights_only=False))
+        _LOCAL_IBP.torch_model = _LOCAL_IBP.torch_model.to(dtype=dtype)
+        _LOCAL_IBP.torch_model.eval()
+
+        _LOCAL_IBP.lbp_linearizer = CrownPartialLinearization(_LOCAL_IBP.torch_model, dtype=dtype)
+        _LOCAL_IBP.dynamics_model = self.dynamics_model
+        _LOCAL_IBP.device = device
+        _LOCAL_IBP.dtype = dtype
+        _LOCAL_IBP.max_depth = self.max_depth
+
+    @staticmethod
+    def verify_batch(batch):
+        """Verify a batch of samples using IBP. Called by the executor."""
+        return IBPVerificationStrategy._verify_batch_ibp(
+            batch,
+            _LOCAL_IBP.dynamics_model,
+            _LOCAL_IBP.lbp_linearizer,
+            _LOCAL_IBP.torch_model,
+            _LOCAL_IBP.device,
+            _LOCAL_IBP.dtype,
+            max_depth=_LOCAL_IBP.max_depth,
+        )
+
+    @staticmethod
+    @torch.no_grad()
+    def _verify_batch_ibp(
+        batch,
+        dynamics_model,
+        lbp_linearizer,
+        torch_model,
+        device,
+        dtype,
+        min_volume=1e-8,
+        max_depth=None,
+    ):
+        """
+        Verify a batch of samples using hybrid LBP+IBP approach.
+        """
+        return verify_batch_ibp(
+            batch,
+            dynamics_model,
+            lbp_linearizer,
+            device,
+            dtype,
+            min_volume=min_volume,
+            max_depth=max_depth,
+        )
+
+
+# Global namespace for worker-specific objects (IBP version)
+_LOCAL_IBP = types.SimpleNamespace()
 
 
 class IBPVerifier:
@@ -909,13 +998,15 @@ class IBPVerifier:
         dynamics_model,
         device: Optional[torch.device] = None,
         dtype: torch.dtype = torch.float32,
-        max_depth: Optional[int] = None
+        max_depth: Optional[int] = None,
+        model_path: Optional[str] = None
     ):
         self.model = model
         self.dynamics_model = dynamics_model
         self.device = device or next(model.parameters()).device
         self.dtype = dtype
         self.max_depth = max_depth
+        self.model_path = model_path
 
     def verify_batch(self, batch):
         """
@@ -936,7 +1027,7 @@ class IBPVerifier:
             max_depth=self.max_depth
         )
 
-    def verify_model(self, onnx_path, max_depth=None):
+    def verify_model(self, onnx_path=None, max_depth=None):
         """
         Full verification of a model with region splitting.
 
@@ -947,63 +1038,95 @@ class IBPVerifier:
         Returns:
             Dictionary with verification results including:
             - V_safe, V_unsafe, F_h_positive_in_unsafe, F_safe_cbf_violation,
-              F_depth_limit_reached, F_unsafe_cannot_split
+              F_depth_limit_reached_unsafe, F_depth_limit_reached_safe, F_unsafe_cannot_split
             - certified_percentage, uncertified_percentage
         """
         import time
-        import itertools
+        from queue import LifoQueue
 
         max_depth = max_depth or self.max_depth or 20
 
         self.model.eval()
+
+        # Get model path - use .pth path
+        if hasattr(self, 'model_path'):
+            model_path = self.model_path
+        else:
+            raise ValueError("Model path not found. Please provide a .pth path for the model.")
+
+        # Initialize worker to load model into global namespace
+        IBPVerificationStrategy(model_path, self.dynamics_model, use_gpu=next(self.model.parameters()).is_cuda, max_depth=max_depth).initialize_worker()
 
         # Generate initial samples
         from lbp_neural_cbf.regions import create_region_generator
         region_generator = create_region_generator("simplicial")
         samples = region_generator.create_mesh(self.dynamics_model).get_regions(0)
 
-        # Process all samples with splitting
-        all_results = []
-        samples_to_process = list(samples)
+        # Use LifoQueue for DFS-like processing (same pattern as SinglethreadExecutor)
+        # This fixes the bug where samples were being lost in the original implementation
+        queue = LifoQueue()
+        for sample in samples:
+            queue.put(sample)
+
+        # only_leaf_results stores the final leaf results (SAT, UNSAT)
+        # SampleResultMaybe is NOT a leaf - it will be split into children
+        only_leaf_results = []
         computation_start = time.time()
 
-        while samples_to_process:
-            batch = samples_to_process[:512]
-            samples_to_process = samples_to_process[512:]
-
-            batch_results = self.verify_batch(batch)
-            all_results.extend(batch_results)
-
-            # Collect new samples from MAYBE results
-            new_samples = []
-            for result in batch_results:
-                if hasattr(result, 'hasnewsamples') and result.hasnewsamples():
-                    new_samples.extend(result.newsamples())
-
-            # Check depth limit
-            samples_to_process = []
-            for new_sample in new_samples:
-                if max_depth is None or new_sample.depth < max_depth:
-                    samples_to_process.append(new_sample)
+        batch_size = 512
+        while not queue.empty():
+            batch = []
+            for _ in range(batch_size):
+                if not queue.empty():
+                    batch.append(queue.get())
                 else:
-                    from lbp_neural_cbf.certification_results import SampleResultUNSAT
-                    all_results.append(SampleResultUNSAT(
-                        new_sample, computation_start, [new_sample.center],
-                        result_type="depth_limit_reached"
-                    ))
+                    break
 
+            if not batch:
+                break
+
+            # Process batch
+            batch_results = IBPVerificationStrategy.verify_batch(batch)
+
+            # Only add leaf results to only_leaf_results
+            # SampleResultMaybe will be split into children and added later
+            for result in batch_results:
+                if result.isleaf():
+                    only_leaf_results.append(result)
+                elif result.hasnewsamples():
+                    # SampleResultMaybe: put children back in queue
+                    for new_sample in result.newsamples():
+                        if max_depth is None or new_sample.depth < max_depth:
+                            queue.put(new_sample)
+                        else:
+                            # Child reached max_depth - create UNSAT leaf and add directly
+                            from lbp_neural_cbf.certification_results import SampleResultUNSAT
+                            # Determine result_type based on split_type
+                            split_type = getattr(result, 'split_type', '')
+                            if 'boundary_unsafe' in split_type:
+                                result_type = 'depth_limit_reached_unsafe'
+                            elif 'cbf_failure' in split_type:
+                                result_type = 'depth_limit_reached_safe'
+                            else:
+                                result_type = 'depth_limit_reached'
+                            only_leaf_results.append(SampleResultUNSAT(
+                                new_sample, computation_start, [new_sample.center],
+                                result_type=result_type
+                            ))
+
+        all_results = only_leaf_results
         computation_time = time.time() - computation_start
-
-        # Import result types for classification
-        from lbp_neural_cbf.certification_results import SampleResultSAT, SampleResultUNSAT
 
         # Classify results
         V_safe = []
         V_unsafe = []
         F_h_positive_in_unsafe = []
         F_safe_cbf_violation = []
-        F_depth_limit_reached = []
+        F_depth_limit_reached_unsafe = []
+        F_depth_limit_reached_safe = []
         F_unsafe_cannot_split = []
+
+        from lbp_neural_cbf.certification_results import SampleResultSAT, SampleResultUNSAT
 
         for result in all_results:
             sample = result.sample
@@ -1027,27 +1150,30 @@ class IBPVerifier:
                     F_h_positive_in_unsafe.append(vertices)
                 elif result.result_type == "safe_cbf_violation":
                     F_safe_cbf_violation.append(vertices)
-                elif result.result_type == "depth_limit_reached":
-                    F_depth_limit_reached.append(vertices)
+                elif result.result_type == "depth_limit_reached_unsafe":
+                    F_depth_limit_reached_unsafe.append(vertices)
+                elif result.result_type == "depth_limit_reached_safe":
+                    F_depth_limit_reached_safe.append(vertices)
                 elif result.result_type == "unsafe_cannot_split":
                     F_unsafe_cannot_split.append(vertices)
 
-        total = len(all_results)
+        total = len(all_results) if all_results else 0
         certified = len(V_safe) + len(V_unsafe)
-        certified_percentage = (certified / total * 100) if total > 0 else 0
-        uncertified_percentage = 100 - certified_percentage
+        certified_pct = (certified / total * 100) if total > 0 else 0
+        uncertified_pct = 100 - certified_pct
 
         return {
             "regions": all_results,
-            "certified_percentage": certified_percentage,
-            "uncertified_percentage": uncertified_percentage,
+            "certified_percentage": certified_pct,
+            "uncertified_percentage": uncertified_pct,
             "computation_time": computation_time,
             "total_samples": total,
             "V_safe": V_safe,
             "V_unsafe": V_unsafe,
             "F_h_positive_in_unsafe": F_h_positive_in_unsafe,
             "F_safe_cbf_violation": F_safe_cbf_violation,
-            "F_depth_limit_reached": F_depth_limit_reached,
+            "F_depth_limit_reached_unsafe": F_depth_limit_reached_unsafe,
+            "F_depth_limit_reached_safe": F_depth_limit_reached_safe,
             "F_unsafe_cannot_split": F_unsafe_cannot_split,
         }
 

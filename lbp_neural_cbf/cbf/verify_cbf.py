@@ -75,9 +75,10 @@ def verify_cbf(
         Verification results with guaranteed soundness for SAT results
     """
     if barrier_model_path is None:
-        model_dir = "data"
-        os.makedirs(model_dir, exist_ok=True)
-        barrier_model_path = os.path.join(model_dir, f"{dynamics_model.system_name}_cbf.onnx")
+        # model_dir = "data"
+        # os.makedirs(model_dir, exist_ok=True)
+        # barrier_model_path = os.path.join(model_dir, f"{dynamics_model.system_name}_cbf.onnx")
+        raise ValueError("barrier_model_path must be provided for verification")
 
     print(f"Verifying CBF: {barrier_model_path}")
 
@@ -209,7 +210,8 @@ def verify_cbf(
     V_unsafe = []             # SAT, unsafe_region — 障碍区中验证通过
     F_h_positive_in_unsafe = []    # UNSAT, h_positive_in_unsafe — 障碍区内 h(x) >= 0 的违规
     F_safe_cbf_violation = []      # UNSAT, safe_cbf_violation — 安全区内 CBF 条件违规
-    F_depth_limit_reached = []     # UNSAT, depth_limit_reached — 达到最大分裂深度
+    F_depth_limit_reached_unsafe = []     # UNSAT, depth_limit_reached_unsafe — unsafe区域达到最大分裂深度
+    F_depth_limit_reached_safe = []       # UNSAT, depth_limit_reached_safe — safe区域达到最大分裂深度
     F_unsafe_cannot_split = []      # UNSAT, unsafe_cannot_split — 障碍区无法继续细分
 
     for result in agg:
@@ -247,8 +249,10 @@ def verify_cbf(
                 F_h_positive_in_unsafe.append(vertices)
             elif result_type == "safe_cbf_violation":
                 F_safe_cbf_violation.append(vertices)
-            elif result_type == "depth_limit_reached":
-                F_depth_limit_reached.append(vertices)
+            elif result_type == "depth_limit_reached_unsafe":
+                F_depth_limit_reached_unsafe.append(vertices)
+            elif result_type == "depth_limit_reached_safe":
+                F_depth_limit_reached_safe.append(vertices)
             elif result_type == "unsafe_cannot_split":
                 F_unsafe_cannot_split.append(vertices)
             # else:
@@ -266,7 +270,8 @@ def verify_cbf(
         "V_unsafe": V_unsafe,
         "F_h_positive_in_unsafe": F_h_positive_in_unsafe,
         "F_safe_cbf_violation": F_safe_cbf_violation,
-        "F_depth_limit_reached": F_depth_limit_reached,
+        "F_depth_limit_reached_unsafe": F_depth_limit_reached_unsafe,
+        "F_depth_limit_reached_safe": F_depth_limit_reached_safe,
         "F_unsafe_cannot_split": F_unsafe_cannot_split
     }
 
@@ -304,7 +309,8 @@ def verify_cbf(
         V_unsafe = []             # SAT, unsafe_region — 障碍区中验证通过
         F_h_positive_in_unsafe = []    # UNSAT, h_positive_in_unsafe — 障碍区内 h(x) >= 0 的违规
         F_safe_cbf_violation = []      # UNSAT, safe_cbf_violation — 安全区内 CBF 条件违规
-        F_depth_limit_reached = []     # UNSAT, depth_limit_reached — 达到最大分裂深度
+        F_depth_limit_reached_unsafe = []     # UNSAT, depth_limit_reached_unsafe — unsafe区域达到最大分裂深度
+        F_depth_limit_reached_safe = []       # UNSAT, depth_limit_reached_safe — safe区域达到最大分裂深度
         F_unsafe_cannot_split = []      # UNSAT, unsafe_cannot_split — 障碍区无法继续细分
 
         for result in agg:
@@ -342,8 +348,10 @@ def verify_cbf(
                     F_h_positive_in_unsafe.append(vertices)
                 elif result_type == "safe_cbf_violation":
                     F_safe_cbf_violation.append(vertices)
-                elif result_type == "depth_limit_reached":
-                    F_depth_limit_reached.append(vertices)
+                elif result_type == "depth_limit_reached_unsafe":
+                    F_depth_limit_reached_unsafe.append(vertices)
+                elif result_type == "depth_limit_reached_safe":
+                    F_depth_limit_reached_safe.append(vertices)
                 elif result_type == "unsafe_cannot_split":
                     F_unsafe_cannot_split.append(vertices)
                 # else:
@@ -355,7 +363,8 @@ def verify_cbf(
         print(f"V_unsafe (unsafe_region): {len(V_unsafe)}")
         print(f"F_h_positive_in_unsafe: {len(F_h_positive_in_unsafe)}")
         print(f"F_safe_cbf_violation: {len(F_safe_cbf_violation)}")
-        print(f"F_depth_limit_reached: {len(F_depth_limit_reached)}")
+        print(f"F_depth_limit_reached_unsafe: {len(F_depth_limit_reached_unsafe)}")
+        print(f"F_depth_limit_reached_safe: {len(F_depth_limit_reached_safe)}")
         print(f"F_unsafe_cannot_split: {len(F_unsafe_cannot_split)}")
 
         # 获取激活函数名称
@@ -371,7 +380,8 @@ def verify_cbf(
             'V_unsafe': V_unsafe,
             'F_h_positive_in_unsafe': F_h_positive_in_unsafe,
             'F_safe_cbf_violation': F_safe_cbf_violation,
-            'F_depth_limit_reached': F_depth_limit_reached,
+            'F_depth_limit_reached_unsafe': F_depth_limit_reached_unsafe,
+            'F_depth_limit_reached_safe': F_depth_limit_reached_safe,
             'F_unsafe_cannot_split': F_unsafe_cannot_split,
             'system_name': dynamics_model.system_name,
             'activation_fnc': activation_fnc,
@@ -443,7 +453,8 @@ def verify_cbf(
         logger.info(f"V_unsafe (unsafe_region): {len(V_unsafe)}")
         logger.info(f"F_h_positive_in_unsafe: {len(F_h_positive_in_unsafe)}")
         logger.info(f"F_safe_cbf_violation: {len(F_safe_cbf_violation)}")
-        logger.info(f"F_depth_limit_reached: {len(F_depth_limit_reached)}")
+        logger.info(f"F_depth_limit_reached_unsafe: {len(F_depth_limit_reached_unsafe)}")
+        logger.info(f"F_depth_limit_reached_safe: {len(F_depth_limit_reached_safe)}")
         logger.info(f"F_unsafe_cannot_split: {len(F_unsafe_cannot_split)}")
         logger.info("=" * 60)
 
@@ -477,12 +488,13 @@ class CBFVerificationStrategy:
         self.max_depth = max_depth
 
     @staticmethod
-    def _handle_split(sample, start_time, results, sample_idx, min_volume, split_type, unsat_type, max_depth=None):
+    def _handle_split(sample, start_time, results, sample_idx, min_volume, split_type, unsat_type, max_depth=None, depth_limit_type=None):
         """Record a MAYBE result via splitting or an UNSAT counterexample if splitting is not possible or depth limited."""
         # Check if maximum depth is reached
         if max_depth is not None and sample.depth >= max_depth:
             counterexample = sample.center
-            results[sample_idx] = SampleResultUNSAT(sample, start_time, [counterexample], result_type="depth_limit_reached")
+            result_type = depth_limit_type if depth_limit_type is not None else "depth_limit_reached"
+            results[sample_idx] = SampleResultUNSAT(sample, start_time, [counterexample], result_type=result_type)
             return
 
         if sample._compute_volume() > min_volume:
@@ -609,6 +621,7 @@ class CBFVerificationStrategy:
                         split_type="case_1_boundary_unsafe",
                         unsat_type="unsafe_cannot_split",
                         max_depth=max_depth,
+                        depth_limit_type="depth_limit_reached_unsafe",
                     )
             # Case 3: h(x) >= 0 somewhere on this region (barrier indicates somewhere safe)
             else:
@@ -680,6 +693,7 @@ class CBFVerificationStrategy:
                     split_type="case_2_cbf_failure" if reason[subsample_idx] == "case_2" else "case_3_fallback",
                     unsat_type="safe_cbf_violation",
                     max_depth=max_depth,
+                    depth_limit_type="depth_limit_reached_safe",
                 )
 
                 continue

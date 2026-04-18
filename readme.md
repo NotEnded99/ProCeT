@@ -360,3 +360,11 @@ python3 New_repair/main_clean_v8_ibp.py -a Tanh -s barr1 --num-inner-steps 1 --l
 
 
 for sys in barr1; do   for act in Tanh; do     python visualize_regions.py --activation $act --system $sys       --path "New_repair/regions/verified_regions_${sys}_${act}_repaired_v8_ibp.pt"       --n "repaired_v8_ibp";   done; done
+
+
+# 初始验证
+for sys in barr1 barr2 barr3 barr4; do     python3 experiments/barrier_certificate.py --system-type $sys --verify --activation Tanh --max-depth 15 --hidden-sizes '32,64,32'; done 
+
+for sys in barr1 barr2 barr3 barr4; do     python3 experiments/barrier_certificate.py --system-type $sys --verify --activation Relu --max-depth 15 --hidden-sizes '32,64,32'; done 
+
+for sys in barr1 barr2 barr3 barr4; do     python3 experiments/barrier_certificate.py --system-type $sys --verify --activation Sigmoid --max-depth 15 --hidden-sizes '32,64,32'; done 
