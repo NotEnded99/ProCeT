@@ -52,36 +52,62 @@ class SimpleCBFNet(nn.Module):
         return self.network(x)
 
 
-def load_model(model_path, dynamics):
-    """Load a CBF model from .pth file."""
+def load_model(model_path, dynamics, activation="tanh"):
+    """Load a CBF model from .pth file.
+
+    Args:
+        model_path: Path to the .pth model file
+        dynamics: Dynamics model (used for architecture inference)
+        activation: Activation function ('relu' or 'tanh'), default 'tanh'
+    """
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-    # Create network with appropriate architecture
-    if hasattr(dynamics, 'hidden_sizes'):
-        hidden_sizes = dynamics.hidden_sizes
-    else:
-        hidden_sizes = [128, 256, 128]
+    # First load the state dict to determine architecture
+    state_dict = torch.load(model_path, map_location=device, weights_only=False)
 
-    if hasattr(dynamics, 'activation_fnc'):
-        activation = dynamics.activation_fnc
-    else:
-        activation = 'relu'
+    # Infer architecture from state dict keys like 'network.0.weight', 'network.2.weight', etc.
+    # Each Linear layer's weight shape is [output_dim, input_dim]
+    # Sequential layers are named network.0, network.2, network.4, ... (with ReLU/Tanh at .1, .3, .5)
+    hidden_sizes = []
+    input_dim = None
+    prev_out_dim = None
+
+    for key in sorted(state_dict.keys()):
+        if key.endswith('.weight') and key.startswith('network.'):
+            weight_shape = state_dict[key].shape
+            out_dim = weight_shape[0]
+            in_dim = weight_shape[1]
+
+            if prev_out_dim is None:
+                # First layer: input_dim -> out_dim
+                input_dim = in_dim
+                prev_out_dim = out_dim
+            else:
+                if out_dim == 1:
+                    # Output layer: prev_out_dim is the last hidden layer size
+                    hidden_sizes.append(prev_out_dim)
+                    break
+                else:
+                    # Hidden layer: prev_out_dim -> out_dim
+                    hidden_sizes.append(prev_out_dim)
+                    prev_out_dim = out_dim
+
+    print(f"  Using activation function: {activation}")
 
     model = SimpleCBFNet(
-        input_dim=dynamics.input_dim,
+        input_dim=input_dim,
         hidden_sizes=hidden_sizes,
         activation=activation
     ).to(device)
 
     # Load weights
-    state_dict = torch.load(model_path, map_location=device)
     model.load_state_dict(state_dict)
     model.eval()
 
     return model, device
 
 
-def visualize_cbf(model_path, dynamics, output_path, alpha=1.0, resolution=300):
+def visualize_cbf(model_path, dynamics, output_path, alpha=1.0, resolution=300, activation="tanh"):
     """
     Create CBF visualization for a 2D system.
 
@@ -91,10 +117,11 @@ def visualize_cbf(model_path, dynamics, output_path, alpha=1.0, resolution=300):
         output_path: Path to save the visualization
         alpha: CBF class-K parameter
         resolution: Grid resolution
+        activation: Activation function ('relu' or 'tanh')
     """
     try:
         # Load model
-        model, device = load_model(model_path, dynamics)
+        model, device = load_model(model_path, dynamics, activation)
 
         # Create plotter
         plotter = CBFVerificationPlotter(
@@ -216,7 +243,7 @@ def main():
     manual_dirs = [
         # ('data/author_models', 'author'),      # 作者提供的模型
         # ('data/mine_models_relu', 'relu1'),   # 取消注释以添加更多目录
-        ('New_repair/regions', '_cbf_repaired_v8_ibp'),     # ReLU激活函数训练的模型
+        ('New_repair/regions', '_cbf_repaired_v9_ibp'),     # ReLU激活函数训练的模型
         # ('data/mine2_models_relu', 'relu2'),   # 取消注释以添加更多目录
     ]
 
@@ -228,6 +255,10 @@ def main():
     # 设为 None 表示使用默认（排除 barr4 和 hiord2）
     manual_systems = ['barr1']  # 手动指定系统列表
     # manual_systems = None  # 取消注释此行使用默认设置
+
+    activation = "tanh"  # 激活函数类型（'relu' 或 'tanh'）
+
+
 
     # 输出目录
     output_dir_path = 'results'
@@ -289,14 +320,14 @@ def main():
         print(f"{'='*70}")
 
         for system_name, config in systems_2d.items():
-            model_file = model_path / f"{system_name}_Tanh_cbf_repaired_v8_ibp.pth"
+            model_file = model_path / f"{system_name}_Tanh_cbf_repaired_v10_ibp.pth"
 
             if not model_file.exists():
                 print(f"\n  Model not found: {model_file}")
                 continue
 
             total += 1
-            print(f"\n[{total}] Visualizing {system_name} ({variant})...")
+            print(f"\n[{total}] Visualizing {model_file})...")
 
             # Create dynamics instance
             dynamics = config['dynamics']()
@@ -306,7 +337,7 @@ def main():
             output_file = output_dir / f"{system_name}_{variant}_cbf.png"
 
             # Generate visualization
-            if visualize_cbf(model_file, dynamics, output_file, alpha):
+            if visualize_cbf(model_file, dynamics, output_file, alpha, activation=activation):
                 success += 1
 
     print(f"\n{'='*70}")

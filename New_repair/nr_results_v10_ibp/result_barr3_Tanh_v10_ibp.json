@@ -1,0 +1,32 @@
+{
+  "system": "barr3",
+  "activation": "Tanh",
+  "method": "Harmonic Mean CBF Pass Rate (v10_ibp, LBP验证 + Bounds损失)",
+  "max_depth_start": 10,
+  "max_depth_limit": 15,
+  "depth_schedule": [
+    10,
+    12,
+    15
+  ],
+  "num_inner_steps": 1,
+  "lr": 0.005,
+  "target_pass_rate": 100.0,
+  "plateau_threshold": 0.5,
+  "max_stagnant_iterations": 5,
+  "max_total_iterations": 30,
+  "original_max_depth_harmonic": 99.97187790837249,
+  "original_max_depth_standard": 99.9786376953125,
+  "original_max_depth_R_safe": 99.99526447885589,
+  "original_max_depth_R_unsafe": 99.94850227448288,
+  "final_harmonic_pass_rate": 99.97187790837249,
+  "final_standard_pass_rate": 99.9786376953125,
+  "final_R_safe": 99.99526447885589,
+  "final_R_unsafe": 99.94850227448288,
+  "harmonic_improvement": 0.0,
+  "standard_improvement": 0.0,
+  "num_iterations": 0,
+  "iteration_results": [],
+  "timestamp": "2026-04-18 23:44:02",
+  "skip_reason": "already_100_percent"
+}

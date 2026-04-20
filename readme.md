@@ -368,3 +368,86 @@ for sys in barr1 barr2 barr3 barr4; do     python3 experiments/barrier_certifica
 for sys in barr1 barr2 barr3 barr4; do     python3 experiments/barrier_certificate.py --system-type $sys --verify --activation Relu --max-depth 15 --hidden-sizes '32,64,32'; done 
 
 for sys in barr1 barr2 barr3 barr4; do     python3 experiments/barrier_certificate.py --system-type $sys --verify --activation Sigmoid --max-depth 15 --hidden-sizes '32,64,32'; done 
+
+
+
+# main_clean_v9_ibp  IBP验证和算loss
+
+python3 New_repair/main_clean_v9_ibp.py -a Tanh -s barr1 --num-inner-steps 1 --lr 5e-3 --max-depth-start 10 --max-depth-limit 15 --depth-schedule "10,12,15" --plateau-threshold 0.5 --max-stagnant-iterations 5
+
+
+for sys in barr1; do   for act in Tanh; do     python visualize_regions.py --activation $act --system $sys       --path "New_repair/regions/verified_regions_${sys}_${act}_repaired_v9_ibp.pt"       --n "repaired_v9_ibp";   done; done
+
+
+
+
+for sys in barr1 barr2 barr3 barr4; do
+  for act in Sigmoid; do
+    python3 New_repair/main_clean_v9_ibp.py -a $act -s $sys --num-inner-steps 1 --lr 5e-3 --max-depth-start 10 --max-depth-limit 15 --depth-schedule "10,12,15" --plateau-threshold 0.5 --max-stagnant-iterations 5
+  done
+done
+
+
+for sys in barr1 barr2 barr3 barr4; do
+  for act in Relu; do
+    python3 New_repair/main_clean_v9_ibp.py -a $act -s $sys --num-inner-steps 1 --lr 5e-3 --max-depth-start 10 --max-depth-limit 15 --depth-schedule "10,12,15" --plateau-threshold 0.5 --max-stagnant-iterations 5
+  done
+done
+
+
+for sys in barr1 barr2 barr3 barr4; do
+  for act in Tanh; do
+    python3 New_repair/main_clean_v9_ibp.py -a $act -s $sys --num-inner-steps 1 --lr 5e-3 --max-depth-start 10 --max-depth-limit 15 --depth-schedule "10,12,15" --plateau-threshold 0.5 --max-stagnant-iterations 5
+  done
+done
+
+# main_clean_v10_ibp  LBP验证 IBP算loss
+
+python3 New_repair/main_clean_v10_ibp.py -a Tanh -s barr1 --num-inner-steps 1 --lr 5e-3 --max-depth-start 10 --max-depth-limit 15 --depth-schedule "10,12,15" --plateau-threshold 0.5 --max-stagnant-iterations 5
+
+
+for sys in barr1; do   for act in Tanh; do     python visualize_regions.py --activation $act --system $sys       --path "New_repair/regions/verified_regions_${sys}_${act}_repaired_v10_ibp.pt"       --n "repaired_v10_ibp";   done; done
+
+
+
+for sys in  barr4; do
+  for act in Sigmoid; do
+    python3 New_repair/main_clean_v10_ibp.py -a $act -s $sys --num-inner-steps 1 --lr 5e-3 --max-depth-start 10 --max-depth-limit 15 --depth-schedule "10,12,15" --plateau-threshold 0.5 --max-stagnant-iterations 5
+  done
+done
+
+
+for sys in barr4; do
+  for act in Relu Tanh; do
+    python3 New_repair/main_clean_v10_ibp.py -a $act -s $sys --num-inner-steps 1 --lr 5e-3 --max-depth-start 10 --max-depth-limit 15 --depth-schedule "10,12,15" --plateau-threshold 0.5 --max-stagnant-iterations 5
+  done
+done
+
+
+for sys in barr1 barr2 barr3 barr4; do
+  for act in Sigmoid Relu Tanh; do
+    python3 New_repair/main_clean_v10_ibp.py -a $act -s $sys --num-inner-steps 1 --lr 5e-3 --max-depth-start 10 --max-depth-limit 15 --depth-schedule "10,12,15" --plateau-threshold 0.5 --max-stagnant-iterations 5
+  done
+done
+
+
+for sys in barr1 barr2 barr3 barr4; do
+  for act in Relu; do
+    python3 New_repair/main_clean_v10_ibp.py -a $act -s $sys --num-inner-steps 1 --lr 5e-3 --max-depth-start 10 --max-depth-limit 15 --depth-schedule "10,12,15" --plateau-threshold 0.5 --max-stagnant-iterations 5
+  done
+done
+
+
+for sys in barr1 barr2 barr3 barr4; do
+  for act in Tanh; do
+    python3 New_repair/main_clean_v10_ibp.py -a $act -s $sys --num-inner-steps 1 --lr 5e-3 --max-depth-start 10 --max-depth-limit 15 --depth-schedule "10,12,15" --plateau-threshold 0.5 --max-stagnant-iterations 5
+  done
+done
+
+
+# main_compare_v10
+
+python New_repair/main_compare_v10.py -a Tanh -s barr1
+
+
+

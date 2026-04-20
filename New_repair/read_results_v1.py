@@ -16,7 +16,7 @@ import json
 import glob
 
 # 所有系统和激活函数组合
-DYNAMICS_SYSTEMS = ['simple_2d', 'barr1', 'barr2', 'barr3']
+DYNAMICS_SYSTEMS = ['barr1', 'barr2', 'barr3', 'barr4'] # 'simple_2d'
 ACTIVATIONS = ['Relu', 'Tanh', 'Sigmoid']
 
 
@@ -27,7 +27,8 @@ def load_all_results(results_dir):
     for system in DYNAMICS_SYSTEMS:
         for activation in ACTIVATIONS:
             # filename = f"result_{system}_{activation}_v9.json"
-            filename = f"result_{system}_{activation}_v8_clean.json"
+            # filename = f"result_{system}_{activation}_v8_clean.json"
+            filename = f"result_{system}_{activation}_v9_ibp.json"
             filepath = os.path.join(results_dir, filename)
 
             if os.path.exists(filepath):
@@ -157,7 +158,7 @@ def main():
     # 获取当前脚本所在目录
     script_dir = os.path.dirname(os.path.abspath(__file__))
     # results_dir = os.path.join(script_dir, "nr_results_v9")
-    results_dir = os.path.join(script_dir, "nr_results_v8_clean")
+    results_dir = os.path.join(script_dir, "nr_results_v9_ibp")
     # 
 
 
