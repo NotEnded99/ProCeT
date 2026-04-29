@@ -11,7 +11,7 @@ import json
 from lbp_neural_cbf.cbf.train_cbf import train_cbf
 from lbp_neural_cbf.cbf.verify_cbf import verify_cbf
 from lbp_neural_cbf.cbf.cbf_dynamics import Simple2DSystem, CartPoleSystem, RendezvousDockingSystem
-from lbp_neural_cbf.cbf.fossil_dynamics import Barrier1System, Barrier2System, Barrier3System, Barrier4System, HighOrd2System, HighOrd4System, HighOrd6System, HighOrd8System
+from lbp_neural_cbf.cbf.fossil_dynamics import Barrier1System, Barrier2System, Barrier3System, Barrier4System, HighOrd2System, HighOrd4System, HighOrd6System, HighOrd8System, PlanarQuadrotorSystem
 from lbp_neural_cbf.visualization.cbf_plotter import create_cbf_verification_plotter
 
 def main(system_type="barr1", train=True, verify=False, alpha=1.0, region_type="simplicial", executor_type="single", max_depth=None, activation=None, hidden_sizes=None, save_path=None):
@@ -19,7 +19,7 @@ def main(system_type="barr1", train=True, verify=False, alpha=1.0, region_type="
     Main script for training and verifying neural control barrier functions.
 
     Args:
-        system_type: Type of dynamical system ("simple2d", "barr1", "barr2", "barr3", "barr4", "hiord2", "hiord4", "cartpole", "hiord6", "hiord8", "rendezvousdocking")
+        system_type: Type of dynamical system ("simple2d", "barr1", "barr2", "barr3", "barr4", "hiord2", "hiord4", "cartpole", "hiord6", "hiord8", "rendezvousdocking", "planarquad", "LeakyRelu")
         train: Whether to train the CBF
         verify: Whether to verify the CBF
         alpha: Alpha parameter for the CBF
@@ -75,6 +75,10 @@ def main(system_type="barr1", train=True, verify=False, alpha=1.0, region_type="
         dynamics_model = RendezvousDockingSystem(alpha=alpha)
         batch_size = 64  # Smaller batch size for higher-dimensional system
         print("Using Rendezvous Docking System")
+    elif system_type.lower() == "planarquad":
+        dynamics_model = PlanarQuadrotorSystem(alpha=alpha)
+        batch_size = 256  # Smaller batch size for 6D system
+        print("Using Planar Quadrotor System")
     else:
         raise ValueError(f"Unknown system type: {system_type}")
     
@@ -91,7 +95,7 @@ def main(system_type="barr1", train=True, verify=False, alpha=1.0, region_type="
     
         # Override activation function and save paths if specified
     if activation is not None:
-        valid_activations = ["Tanh", "Relu", "Sigmoid"]
+        valid_activations = ["Tanh", "Relu", "Sigmoid", "LeakyRelu"]
         if activation not in valid_activations:
             raise ValueError(f"Invalid activation function: {activation}. Must be one of {valid_activations}")
         dynamics_model.activation_fnc = activation
@@ -160,15 +164,26 @@ def main(system_type="barr1", train=True, verify=False, alpha=1.0, region_type="
         # Define path to the ONNX model for verification
         # network_path = f"data/mine_models_relu/{dynamics_model.system_name}_cbf.onnx"
         # network_path = f"data/author_models/{dynamics_model.system_name}_cbf.onnx"
+        # if activation == "Tanh":
+        #     network_path = f"/data/mzm/mzm_Verification/verification-of-neural-cbf-mzm4/data/New_models_Hard_Tanh_v1/{dynamics_model.system_name}_cbf.onnx"
+        # elif activation == "Relu":
+        #     network_path = f"/data/mzm/mzm_Verification/verification-of-neural-cbf-mzm4/data/New_models_Hard_Relu_v1/{dynamics_model.system_name}_cbf.onnx"
+        # elif activation == "Sigmoid":
+        #     network_path = f"/data/mzm/mzm_Verification/verification-of-neural-cbf-mzm4/data/New_models_Hard_Sigmoid_v1/{dynamics_model.system_name}_cbf.onnx"
+        # else:
+        #     raise ValueError(f"Unsupported activation function for verification: {activation}")
+        
         if activation == "Tanh":
-            network_path = f"/data/mzm/mzm_Verification/verification-of-neural-cbf-mzm4/data/New_models_Hard_Tanh_v1/{dynamics_model.system_name}_cbf.onnx"
+            network_path = f"/data/mzm/Repair_NCBF/data/New_models_Hard_Tanh_v1/{dynamics_model.system_name}_cbf.onnx"
         elif activation == "Relu":
-            network_path = f"/data/mzm/mzm_Verification/verification-of-neural-cbf-mzm4/data/New_models_Hard_Relu_v1/{dynamics_model.system_name}_cbf.onnx"
+            network_path = f"/data/mzm/Repair_NCBF/data/New_models_Hard_Relu_v1/{dynamics_model.system_name}_cbf.onnx"
         elif activation == "Sigmoid":
-            network_path = f"/data/mzm/mzm_Verification/verification-of-neural-cbf-mzm4/data/New_models_Hard_Sigmoid_v1/{dynamics_model.system_name}_cbf.onnx"
+            network_path = f"/data/mzm/Repair_NCBF/data/New_models_Hard_Sigmoid_v1/{dynamics_model.system_name}_cbf.onnx"
+        elif activation == "LeakyRelu":
+            network_path = f"/data/mzm/Repair_NCBF/data/New_models_Hard_LeakyRelu_v1/{dynamics_model.system_name}_cbf.onnx"
         else:
             raise ValueError(f"Unsupported activation function for verification: {activation}")
-        
+    
         # Verification parameters
         verification_params = {
             'executor_type': executor_type,  # Type of executor (single, multi-thread, or multi-process)
@@ -262,7 +277,7 @@ if __name__ == "__main__":
     parser.add_argument("--max-depth", type=int, default=15,
                        help="Maximum depth for region splitting (None for unlimited)")
     
-    parser.add_argument("--activation", type=str, default="Tanh", choices=["Tanh", "Relu", "Sigmoid"],
+    parser.add_argument("--activation", type=str, default="Tanh", choices=["Tanh", "Relu", "Sigmoid", "LeakyRelu"],
                        help="Activation function for the barrier network (overrides system default)")
     parser.add_argument("--hidden-sizes", type=str, default='32,64,32',
                        help="Hidden layer sizes, e.g. '32,64,32' (overrides system default)")

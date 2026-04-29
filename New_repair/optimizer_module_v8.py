@@ -262,7 +262,9 @@ def compute_repair_loss_and_grad_unsafe_lbp(
         else torch.zeros(p.numel(), dtype=dtype, device=device)
         for p in model.parameters()
     ])
-    grad_this = torch.nan_to_num(grad_this, nan=0.0, posinf=0.0, neginf=0.0)
+    # grad_this = torch.nan_to_num(grad_this, nan=0.0, posinf=0.0, neginf=0.0)
+    if grad_this.isnan().any() or grad_this.isinf().any():
+            raise ValueError(f"Unsafe LBP batch 计算得到 NaN/Inf 梯度，可能是 h_ub 计算异常")
 
     grad_norm = grad_this.norm().item()
     if grad_norm > grad_clip_norm:
@@ -355,7 +357,10 @@ def compute_repair_loss_and_grad_safe_ibp(
         else torch.zeros(p.numel(), dtype=dtype, device=device)
         for p in model.parameters()
     ])
-    grad_this = torch.nan_to_num(grad_this, nan=0.0, posinf=0.0, neginf=0.0)
+    # grad_this = torch.nan_to_num(grad_this, nan=0.0, posinf=0.0, neginf=0.0)
+    if grad_this.isnan().any() or grad_this.isinf().any():
+            raise ValueError(f"Unsafe LBP batch 计算得到 NaN/Inf 梯度，可能是 h_ub 计算异常")
+
 
     grad_norm = grad_this.norm().item()
     if grad_norm > grad_clip_norm:
@@ -419,7 +424,8 @@ def compute_repair_loss_and_grad_bounds(
         )
         if torch.isfinite(grad_unsafe).all():
             g_raw.add_(grad_unsafe)
-            total_loss_sum += loss_unsafe * len(unsafe_simplices)
+            # total_loss_sum += loss_unsafe * len(unsafe_simplices)
+            total_loss_sum += loss_unsafe
             n_valid += 1
 
     # 处理 Safe 区域 (使用 IBP 下界，alpha 项用 LBP)
@@ -430,7 +436,7 @@ def compute_repair_loss_and_grad_bounds(
         )
         if torch.isfinite(grad_safe).all():
             g_raw.add_(grad_safe)
-            total_loss_sum += loss_safe * len(safe_simplices)
+            total_loss_sum += loss_safe
             n_valid += 1
 
     if n_valid == 0:

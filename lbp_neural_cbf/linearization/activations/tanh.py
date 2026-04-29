@@ -219,8 +219,9 @@ class TanhActivationRelaxation(ActivationRelaxation):
         tangent_cubic_roots, valid_roots_mask = self._solve_cubic_for_tangent(secant_slope)
         # Clamp to avoid gradient explosion in atanh backward: d/dx atanh(x) = 1/(1-x²)
         # Without clamp, x near ±1 causes inf gradient -> NaN after mul by 0
-        # tangent_points_x = torch.atanh(tangent_cubic_roots.clamp(-1 + 1e-6, 1 - 1e-6))
-        tangent_points_x = torch.atanh(tangent_cubic_roots)  
+        # [ORIGINAL] tangent_points_x = torch.atanh(tangent_cubic_roots)
+        eps = 1e-8
+        tangent_points_x = torch.atanh(tangent_cubic_roots.clamp(-1 + eps, 1 - eps))  
 
         in_range = (tangent_points_x > lb.unsqueeze(-1)) & (tangent_points_x < ub.unsqueeze(-1)) & valid_roots_mask
 
@@ -356,6 +357,12 @@ class TanhActivationRelaxation(ActivationRelaxation):
         # Argument for acos must be clamped to [-1, 1] for numerical stability
         negative_delta_mask = delta < -epsilon
 
+        # [ORIGINAL] sqrt_factor = np.sqrt(-p / 3.0)
+        # np.sqrt returns float64 which causes dtype mismatch with float32 tensors
+        # sqrt_factor = torch.sqrt(torch.tensor(-p / 3.0, dtype=m.dtype))
+        # [ORIGINAL] sqrt_factor = np.sqrt(-p / 3.0)
+        # np.sqrt returns float64 which causes dtype mismatch with float32 tensors
+        # sqrt_factor = torch.sqrt(torch.tensor(-p / 3.0, dtype=m.dtype))
         sqrt_factor = np.sqrt(-p / 3.0)
         acos_arg = (3.0 * q[negative_delta_mask]) / (2.0 * p * sqrt_factor)
         acos_arg_clamped = torch.clamp(acos_arg, -1.0, 1.0)

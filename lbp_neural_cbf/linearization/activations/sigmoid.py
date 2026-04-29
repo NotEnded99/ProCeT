@@ -305,7 +305,9 @@ class SigmoidActivationRelaxation(ActivationRelaxation):
         valid_discriminant = discriminant > 0
 
         # When discriminant <= 0, tangent points are at inflection (x=0)
-        d = torch.sqrt(torch.clamp(discriminant, min=0))
+        # d = torch.sqrt(torch.clamp(discriminant, min=0))
+        eps = 1e-8
+        d = torch.sqrt(torch.clamp(discriminant, min=0) + eps)
         y_lambda = (1 - d) / 2  # lower tangent (convex part)
         y_mu = (1 + d) / 2  # upper tangent (concave part)
 

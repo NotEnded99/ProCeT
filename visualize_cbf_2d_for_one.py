@@ -30,7 +30,7 @@ from lbp_neural_cbf.visualization.cbf_plotter import CBFVerificationPlotter
 
 class SimpleCBFNet(nn.Module):
     """Simple CBF network matching the saved model architecture."""
-    def __init__(self, input_dim=2, hidden_sizes=[128, 256, 128], activation='relu'):
+    def __init__(self, input_dim=2, hidden_sizes=[32, 64, 32], activation='Relu'):
         super().__init__()
         self.input_dim = input_dim
         self.hidden_sizes = hidden_sizes
@@ -39,10 +39,12 @@ class SimpleCBFNet(nn.Module):
         prev_size = input_dim
         for hidden_size in hidden_sizes:
             layers.append(nn.Linear(prev_size, hidden_size))
-            if activation.lower() == 'relu':
+            if activation == 'Relu':
                 layers.append(nn.ReLU())
-            elif activation.lower() == 'tanh':
+            elif activation == 'Tanh':
                 layers.append(nn.Tanh())
+            elif activation == 'Sigmoid':
+                layers.append(nn.Sigmoid())
             prev_size = hidden_size
         layers.append(nn.Linear(prev_size, 1))
 
@@ -52,7 +54,7 @@ class SimpleCBFNet(nn.Module):
         return self.network(x)
 
 
-def load_model(model_path, dynamics, activation="tanh"):
+def load_model(model_path, dynamics, activation="Tanh"):
     """Load a CBF model from .pth file.
 
     Args:
@@ -253,10 +255,10 @@ def main():
     # 指定要可视化的系统
     # 可选值: 'barr1', 'barr2', 'barr3', 'barr4', 'simple_2d', 'hiord2'
     # 设为 None 表示使用默认（排除 barr4 和 hiord2）
-    manual_systems = ['barr1']  # 手动指定系统列表
+    manual_systems = ['barr2']  # 手动指定系统列表
     # manual_systems = None  # 取消注释此行使用默认设置
 
-    activation = "tanh"  # 激活函数类型（'relu' 或 'tanh'）
+    activation = "Sigmoid"  # 激活函数类型（'Relu' 或 'Sigmoid'）
 
 
 
@@ -320,7 +322,7 @@ def main():
         print(f"{'='*70}")
 
         for system_name, config in systems_2d.items():
-            model_file = model_path / f"{system_name}_Tanh_cbf_repaired_v10_ibp.pth"
+            model_file = model_path / f"{system_name}_{activation}_cbf_repaired_v9_ibp.pth"
 
             if not model_file.exists():
                 print(f"\n  Model not found: {model_file}")
@@ -334,7 +336,7 @@ def main():
             alpha = config['alpha']
 
             # Create output filename
-            output_file = output_dir / f"{system_name}_{variant}_cbf.png"
+            output_file = output_dir / f"{system_name}_{activation}_{variant}_cbf.png"
 
             # Generate visualization
             if visualize_cbf(model_file, dynamics, output_file, alpha, activation=activation):

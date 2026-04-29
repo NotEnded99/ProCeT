@@ -284,89 +284,20 @@ class IBPNetworkBoundCalculator:
 
     def ibp_jacobian_bounds(self, batch) -> Tuple[torch.Tensor, torch.Tensor]:
         """
-        Compute IBP bounds on the Jacobian ∂h/∂x using autograd.
+        Compute IBP bounds on the Jacobian ∂h/∂x using interval arithmetic.
 
         For a scalar output h(x), the Jacobian is ∂h/∂x with shape [batch, n_in].
-        We use the network's autograd to compute this directly.
-
-        Returns:
-            Tuple of (J_L, J_U): Lower and upper Jacobian bounds
-            Shape: [batch, n_in]
-        """
-        if not hasattr(self, 'output_bounds') or self.output_bounds is None:
-            raise ValueError("Must call ibp_forward() first")
-
-        batch_size = len(batch)
-        n_in = self.input_bounds.lower.shape[-1]
-
-        # Get the actual input bounds (center of region for evaluation)
-        x_lb = self.input_bounds.lower  # [batch, n_in]
-        x_ub = self.input_bounds.upper  # [batch, n_in]
-        x_center = (x_lb + x_ub) / 2  # Use center for Jacobian evaluation
-
-        # Clone and make requires_grad for gradient computation
-        x_for_grad = x_center.detach().clone().requires_grad_(True)
-
-        # Compute network output
-        model = self.model.to(self.device)
-        model.eval()  # Don't affect batch norm etc
-
-        output = model(x_for_grad)  # [batch, n_out]
-
-        # For scalar output, compute Jacobian via autograd
-        n_out = output.shape[-1]
-
-        if n_out == 1:
-            # Scalar output: Jacobian is grad of scalar output w.r.t. input
-            jac = torch.zeros(batch_size, n_in, dtype=self.dtype, device=self.device)
-
-            for i in range(batch_size):
-                if output[i, 0].requires_grad:
-                    grads = torch.autograd.grad(
-                        outputs=output[i, 0],
-                        inputs=x_for_grad,
-                        retain_graph=(i < batch_size - 1)
-                    )[0]
-                    jac[i] = grads[i]
-
-            # For IBP, we use the computed Jacobian as both bounds
-            # (This is the "center" value; interval propagation would give bounds)
-            J_L = jac
-            J_U = jac
-        else:
-            # Multi-output case
-            jac = torch.zeros(batch_size, n_out, n_in, dtype=self.dtype, device=self.device)
-            for i in range(batch_size):
-                for j in range(n_out):
-                    if output[i, j].requires_grad:
-                        grads = torch.autograd.grad(
-                            outputs=output[i, j],
-                            inputs=x_for_grad,
-                            retain_graph=(i < batch_size - 1 or j < n_out - 1)
-                        )[0]
-                        jac[i, j] = grads[i]
-
-            J_L = jac.reshape(batch_size, -1)
-            J_U = jac.reshape(batch_size, -1)
-
-        return J_L, J_U
-
-    def ibp_jacobian_bounds_interval(self, batch) -> Tuple[torch.Tensor, torch.Tensor]:
-        """
-        Compute IBP bounds on the Jacobian using interval arithmetic directly.
-
-        This computes conservative bounds via backward interval propagation.
+        Uses backward interval propagation for conservative bounds.
 
         Returns:
             Tuple of (J_L, J_U): Lower and upper Jacobian bounds
             Shape: [batch, n_in]
         """
         if not self.pre_act_bounds:
-            raise ValueError("Must call ibp_forward() before ibp_jacobian_bounds_interval()")
+            raise ValueError("Must call ibp_forward() before ibp_jacobian_bounds()")
 
         batch_size = len(batch)
         n_in = self.input_bounds.lower.shape[-1]
-        n_out = self.output_bounds.lower.shape[-1]
 
         num_layers = len(self.fc_layers)
         num_activations = len(self.activation_types)
@@ -390,22 +321,12 @@ class IBPNetworkBoundCalculator:
                 pre_bounds = self.pre_act_bounds[layer_idx]
                 sp_l, sp_u = get_activation_derivative_bounds(act_type, pre_bounds.lower, pre_bounds.upper)
 
-                # sp has shape [batch, n_i] where n_i is the output dim of this layer
-                # But we need to handle broadcasting correctly
-                # For scalar output, dh/dz has shape [batch, 1], sp has shape [batch, n_i]
-                # We need to expand dh/dz to match sp
-
-                # Actually, for proper interval propagation:
+                # For proper interval propagation:
                 # dh/dy = dh/dz * sp (element-wise)
-                # dh/dz has shape [batch, n_i] (output dim of layer)
-                # sp has shape [batch, n_i]
-                # Result: [batch, n_i]
-
                 dh_dz_L = dh_dz_L * sp_l
                 dh_dz_U = dh_dz_U * sp_u
 
             # Apply linear backward: dh/dz_prev = dh/dy @ W
-            # dh/dy [batch, n_out_i], W [n_out_i, n_in_i] -> dh/dz_prev [batch, n_in_i]
             # For interval: use W^+ for lower, W^- for upper (conservative)
             dh_dz_L_new = torch.matmul(dh_dz_L, W_pos) + torch.matmul(dh_dz_U, W_neg)
             dh_dz_U_new = torch.matmul(dh_dz_U, W_pos) + torch.matmul(dh_dz_L, W_neg)

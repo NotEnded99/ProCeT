@@ -2,10 +2,11 @@ from abc import abstractmethod
 from typing import List, Optional
 
 import numpy as np
+import torch
 
 from ..dynamics import DynamicalSystem
 from ..translators import NumpyTranslator, TorchTranslator
-from .domain import ApproachConeDomain, BoxDomain, BoxExteriorDomain, ComplementDomain, UnionDomain, parse_domain_definition
+from .domain import ApproachConeDomain, BoxDomain, BoxExteriorDomain, CircleDomain, ComplementDomain, Domain, UnionDomain, parse_domain_definition
 
 
 class CBFDynamicalSystem(DynamicalSystem):
@@ -208,6 +209,131 @@ class CBFDynamicalSystem(DynamicalSystem):
         return cbf_min, cbf_max
 
 
+class ParabolicUnsafeDomain(Domain):
+    """
+    Defines a parabolic unsafe domain:
+    Unsafe set: sign * (x - x0) + (y - y0)^2 <= 0
+    Which describes a parabola opening in the specified direction.
+    """
+
+    def __init__(self, vertex, axis='horizontal', opening=1, bounds=None):
+        """
+        Args:
+            vertex: (xv, yv) - vertex of the parabola
+            axis: 'horizontal' (opens left/right) or 'vertical' (opens up/down)
+            opening: 1 (opens positive direction) or -1 (opens negative direction)
+            bounds: Optional dict with x_min, x_max, y_min, y_max to bound the region
+        """
+        super().__init__(2)
+        self.vertex = np.array(vertex, dtype=np.float64)
+        self.axis = axis
+        self.opening = opening
+        self.bounds = bounds
+
+    def _eval(self, x, translator):
+        x1, x2 = x[..., 0], x[..., 1]
+        xv, yv = self.vertex[0], self.vertex[1]
+        if self.axis == 'horizontal':
+            return self.opening * (x1 - xv) + translator.pow(x2 - yv, 2)
+        else:
+            return self.opening * (x2 - yv) + translator.pow(x1 - xv, 2)
+
+    def contains(self, x: np.ndarray, translator=None) -> np.ndarray:
+        if translator is None:
+            translator = NumpyTranslator()
+        x = translator.to_format(x)
+        result = self._eval(x, translator) <= 0.0
+        if self.bounds:
+            if 'x_min' in self.bounds:
+                result = result & (x[..., 0] >= self.bounds['x_min'])
+            if 'x_max' in self.bounds:
+                result = result & (x[..., 0] <= self.bounds['x_max'])
+            if 'y_min' in self.bounds:
+                result = result & (x[..., 1] >= self.bounds['y_min'])
+            if 'y_max' in self.bounds:
+                result = result & (x[..., 1] <= self.bounds['y_max'])
+        return result
+
+    def constraint(self, x: np.ndarray, translator=None) -> np.ndarray:
+        if translator is None:
+            translator = NumpyTranslator()
+        return -self._eval(x, translator)
+
+    def volume(self) -> float:
+        if not self.bounds:
+            return float("inf")
+        w = self.bounds.get('x_max', float('inf')) - self.bounds.get('x_min', -float('inf'))
+        h = self.bounds.get('y_max', float('inf')) - self.bounds.get('y_min', -float('inf'))
+        return w * h
+
+    def intersects_hyperrect(self, center, radius):
+        c1, c2 = center[0], center[1]
+        r1, r2 = radius[0], radius[1]
+        corners = [(c1-r1, c2-r2), (c1-r1, c2+r2), (c1+r1, c2-r2), (c1+r1, c2+r2)]
+        for x1, x2 in corners:
+            if self._contains_point(x1, x2):
+                return True
+        return False
+
+    def contains_hyperrect(self, center, radius):
+        c1, c2 = center[0], center[1]
+        r1, r2 = radius[0], radius[1]
+        corners = [(c1-r1, c2-r2), (c1-r1, c2+r2), (c1+r1, c2-r2), (c1+r1, c2+r2)]
+        for x1, x2 in corners:
+            if not self._contains_point(x1, x2):
+                return False
+        return True
+
+    def _contains_point(self, x1, x2):
+        xv, yv = self.vertex[0], self.vertex[1]
+        if self.axis == 'horizontal':
+            val = self.opening * (x1 - xv) + (x2 - yv)**2
+        else:
+            val = self.opening * (x2 - yv) + (x1 - xv)**2
+        result = val <= 0.0
+        if self.bounds:
+            if 'x_min' in self.bounds and x1 < self.bounds['x_min']:
+                return False
+            if 'x_max' in self.bounds and x1 > self.bounds['x_max']:
+                return False
+            if 'y_min' in self.bounds and x2 < self.bounds['y_min']:
+                return False
+            if 'y_max' in self.bounds and x2 > self.bounds['y_max']:
+                return False
+        return result
+
+    def intersects_simplex(self, vertices):
+        for v in vertices:
+            if self._contains_point(v[0], v[1]):
+                return True
+        return False
+
+    def contains_simplex(self, vertices):
+        for v in vertices:
+            if not self._contains_point(v[0], v[1]):
+                return False
+        return True
+
+    def sample_points(self, num_points, device=None, use_torch=False, **kwargs):
+        if num_points <= 0:
+            return torch.empty((0, 2), device=device) if use_torch else np.empty((0, 2))
+        if not self.bounds:
+            raise ValueError("Cannot sample from unbounded parabolic unsafe set")
+        x_min, x_max = self.bounds.get('x_min', -float('inf')), self.bounds.get('x_max', float('inf'))
+        y_min, y_max = self.bounds.get('y_min', -float('inf')), self.bounds.get('y_max', float('inf'))
+        box = BoxDomain([[x_min, x_max], [y_min, y_max]])
+        translator = TorchTranslator(device=device)
+        valid_samples = torch.empty((0, 2), device=device)
+        max_iterations = 10
+        for _ in range(max_iterations):
+            samples = box.sample_points(num_points * 50, device=device, use_torch=use_torch)
+            mask = self.contains(samples, translator=translator)
+            valid_samples = torch.cat([valid_samples, samples[mask]], dim=0)
+            if valid_samples.shape[0] >= num_points:
+                break
+        return valid_samples[:num_points]
+
+
 class Simple2DSystem(CBFDynamicalSystem):
     """
     Simple 2D dynamical system with affine control for testing CBF verification.
@@ -236,20 +362,28 @@ class Simple2DSystem(CBFDynamicalSystem):
 
         # Define unsafe set (obstacles to avoid)
         if unsafe_set is None:
-            # Default: single circular obstacle
-            # self.unsafe_set_def = {"type": "circle", "center": [1.5, 0.0], "radius": 0.3}
+            # Default: single circular obstacle + parabolic unsafe region
+            # 抛物线区域: 顶点在 (-2.5, -1.5)，开口向左（弧向右），unsafe在抛物线左侧
+            # unsafe: x <= -2.5 - (y + 1.5)^2，即 x + 2.5 + (y + 1.5)^2 <= 0
             self.unsafe_set_def = {
                                 "type": "union",
                                 "regions": [
-                                    {"type": "circle", "center": [1.5, 0.0], "radius": 0.3},   # 原有的
-                                    {"type": "circle", "center": [-1.0, -0.5], "radius": 0.6}, # 新增的
+                                    {"type": "circle", "center": [1.5, 0.3], "radius": 0.4},   # 原有的
                                 ]
                             }
+            # 手动构建包含抛物线区域的 unsafe_set_interior
+            # 抛物线 unsafe: x <= -2.0 - (y + 1.5)^2，即 x + 2.0 + (y + 1.5)^2 <= 0
+            # 弧在右侧，开口向左，紧贴左下角边界
+            self.unsafe_set_interior = UnionDomain([
+                CircleDomain(center=[1.5, 0.3], radius=0.4),
+                CircleDomain(center=[-1.5, 2.0], radius=0.5),
+                ParabolicUnsafeDomain(vertex=[-1.4, -1.6], axis='horizontal', opening=1,
+                                      bounds={'x_min': -3.0, 'x_max': 3, 'y_min': -2.0, 'y_max': 2.0}),
+            ])
         else:
             self.unsafe_set_def = unsafe_set
+            self.unsafe_set_interior = parse_domain_definition(self.unsafe_set_def, self.input_domain)
 
-        # Parse unsafe set into domain object
-        self.unsafe_set_interior = parse_domain_definition(self.unsafe_set_def, self.input_domain)
         self.unsafe_set_exterior = BoxExteriorDomain(self.input_domain.bounds)
         self.unsafe_set = UnionDomain([self.unsafe_set_interior, self.unsafe_set_exterior])
 

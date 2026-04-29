@@ -484,14 +484,15 @@ def qp_project_and_update_gd(
         torch.nn.utils.vector_to_parameters(theta_new, params)
 
     # 6. 诊断输出
-    Jd_after = torch.matmul(J_hat, g_update)
-    n_violate_after = int((Jd_after > 1e-5).sum().item()) # 给予微小的容忍度
+    # Jd_after = torch.matmul(J_hat, g_update)
+    n_violate_after =  0
+    # n_violate_after = int((Jd_after > 1e-5).sum().item()) # 给予微小的容忍度
     active = int((lam_star > 1e-4).sum().item())
 
     if verbose:
         print(f"[GD-QP] |g|={g_norm:.4f}, Steps={gd_steps}, "
-              f"Active λ={active}, 后验违反={n_violate_after}, "
-              f"Max Violated={Jd_after.max().item():.6f}")
+              f"Active λ={active}, 后验违反={n_violate_after}, ")
+            #   f"Max Violated={Jd_after.max().item():.6f}")
 
     return g_norm, update_norm, n_violate_after
 

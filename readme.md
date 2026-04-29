@@ -1,13 +1,40 @@
 
 
 # 训练模型：
-for sys in barr1 barr2 barr3 barr4 cartpole; do     python3 experiments/barrier_certificate.py --system-type $sys --train --activation Relu --hidden-sizes '32,64,32' --save-path '/data/mzm/mzm_Verification/verification-of-neural-cbf-mzm4/data/New_models_Hard_Relu_v1'; done
+for sys in simple2d barr1 barr2 barr3 barr4; do     python3 experiments/barrier_certificate.py --system-type $sys --train --activation Relu --hidden-sizes '32,64,32' --save-path '/data/mzm/mzm_Verification/verification-of-neural-cbf-mzm4/data/New_models_Hard_Relu_v1'; done
 
 
-for sys in barr1 barr2 barr3 barr4; do     python3 experiments/barrier_certificate.py --system-type $sys --train --activation Tanh --hidden-sizes '32,64,32' --save-path '/data/mzm/mzm_Verification/verification-of-neural-cbf-mzm4/data/New_models_Hard_Tanh_v1'; done
+for sys in simple2d barr1 barr2 barr3 barr4; do     python3 experiments/barrier_certificate.py --system-type $sys --train --activation Tanh --hidden-sizes '32,64,32' --save-path '/data/mzm/mzm_Verification/verification-of-neural-cbf-mzm4/data/New_models_Hard_Tanh_v1'; done
 
 
-for sys in barr1 barr2 barr3 barr4 cartpole; do     python3 experiments/barrier_certificate.py --system-type $sys --train --activation Sigmoid --hidden-sizes '32,64,32' --save-path '/data/mzm/mzm_Verification/verification-of-neural-cbf-mzm4/data/New_models_Hard_Sigmoid_v1'; done
+for sys in simple2d barr1 barr2 barr3 barr4; do     python3 experiments/barrier_certificate.py --system-type $sys --train --activation Sigmoid --hidden-sizes '32,64,32' --save-path '/data/mzm/mzm_Verification/verification-of-neural-cbf-mzm4/data/New_models_Hard_Sigmoid_v1'; done
+
+
+
+for sys in simple2d barr1 barr2 barr3 barr4; do   CUDA_VISIBLE_DEVICES=5,6  python3 experiments/barrier_certificate.py --system-type $sys --train --activation Relu --hidden-sizes '32,64,32' --save-path '/data/mzm/Repair_NCBF/data/New_models_Hard_Relu_v1'; done
+
+
+for sys in simple2d barr1 barr2 barr3 barr4; do   CUDA_VISIBLE_DEVICES=5,6  python3 experiments/barrier_certificate.py --system-type $sys --train --activation Tanh --hidden-sizes '32,64,32' --save-path '/data/mzm/Repair_NCBF/data/New_models_Hard_Tanh_v1'; done
+
+
+for sys in simple2d barr1 barr2 barr3 barr4; do   CUDA_VISIBLE_DEVICES=5,6  python3 experiments/barrier_certificate.py --system-type $sys --train --activation Sigmoid --hidden-sizes '32,64,32' --save-path '/data/mzm/Repair_NCBF/data/New_models_Hard_Sigmoid_v1'; done
+
+
+
+for sys in simple2d barr1 barr2 barr3 barr4; do   CUDA_VISIBLE_DEVICES=7  python3 experiments/barrier_certificate.py --system-type $sys --train --activation LeakyReLU --hidden-sizes '32,64,32' --save-path '/data/mzm/Repair_NCBF/data/New_models_Hard_LeakyReLU_v1'; done
+
+
+
+
+
+for sys in planarquad; do   CUDA_VISIBLE_DEVICES=7  python3 experiments/barrier_certificate.py --system-type $sys --train --activation LeakyReLU --hidden-sizes '32,64,32' --save-path '/data/mzm/Repair_NCBF/data/New_models_Hard_LeakyReLU_v1'; done
+
+
+for sys in planarquad; do   CUDA_VISIBLE_DEVICES=7  python3 experiments/barrier_certificate.py --system-type $sys --train --activation Sigmoid --hidden-sizes '32,64,32' --save-path '/data/mzm/Repair_NCBF/data/New_models_Hard_Sigmoid_v1'; done
+
+
+for sys in planarquad; do   CUDA_VISIBLE_DEVICES=7  python3 experiments/barrier_certificate.py --system-type $sys --train --activation Tanh --hidden-sizes '32,64,32' --save-path '/data/mzm/Repair_NCBF/data/New_models_Hard_Tanh_v1'; done
+
 
 
 
@@ -19,12 +46,12 @@ for sys in rendezvousdocking; do     python3 experiments/barrier_certificate.py 
 
 
 # 验证
-for sys in barr1 barr2 barr3 barr4; do     python3 experiments/barrier_certificate.py --system-type $sys --verify --activation Tanh --max-depth 15 --hidden-sizes '32,64,32'; done 
 
-for sys in barr1 barr2 barr3 barr4 cartpole; do     python3 experiments/barrier_certificate.py --system-type $sys --verify --activation Sigmoid --max-depth 15 --hidden-sizes '32,64,32'; done 
+for sys in simple2d barr1 barr2 barr3 barr4 cartpole; do    CUDA_VISIBLE_DEVICES=7 python3 experiments/barrier_certificate.py --system-type $sys --verify --activation Tanh --max-depth 12 --hidden-sizes '32,64,32'; done 
 
+for sys in simple2d barr1 barr2 barr3 barr4 cartpole; do    CUDA_VISIBLE_DEVICES=7 python3 experiments/barrier_certificate.py --system-type $sys --verify --activation Sigmoid --max-depth 12 --hidden-sizes '32,64,32'; done 
 
-for sys in barr1 barr2 barr3 barr4 cartpole; do     python3 experiments/barrier_certificate.py --system-type $sys --verify --activation Relu --max-depth 15 --hidden-sizes '32,64,32'; done 
+for sys in simple2d barr1 barr2 barr3 barr4 cartpole; do    CUDA_VISIBLE_DEVICES=7 python3 experiments/barrier_certificate.py --system-type $sys --verify --activation LeakyRelu --max-depth 12 --hidden-sizes '32,64,32'; done 
 
 
 
@@ -67,21 +94,13 @@ for sys in simple2d barr1 barr2 barr3; do     python visualize_regions.py --syst
 
 for sys in simple2d barr1 barr2 barr3; do     python visualize_regions.py --system "${sys}" --activation 'Relu' --path "New_repair/regions/verified_regions_${sys}_Relu.pt"; done
 
-for sys in simple2d barr1 barr2 barr3; do     python visualize_regions.py --system "${sys}" --activation 'Sigmoid' --path "New_repair/regions/verified_regions_${sys}_Sigmoid.pt"; done
+for sys in simple2d barr1 barr2 barr3; do     python visualize_regions.py --system "${sys}" --activation 'Sigmoid' --path "New_repair/regions/verified_regions_${sys}_Sigmoid_v1.pt"; done
 
 
-python visualize_regions.py --system barr3 --activation 'Relu' --path "New_repair/regions/verified_regions_barr3_Relu_repaired.pt"
-
-python visualize_regions.py --system barr3 --activation 'Sigmoid' --path "New_repair/regions/verified_regions_barr3_Sigmoid_repaired.pt"
-
-python visualize_regions.py --system barr3 --activation 'Sigmoid' --path "New_repair/regions/verified_regions_barr3_Sigmoid_repaired2.pt"
+for sys in simple2d barr1 barr2 barr3; do     python visualize_regions.py --system "${sys}" --activation 'LeakyReLU' --path "New_repair/regions/verified_regions_${sys}_LeakyReLU_v1.pt"; done
 
 
 
-python visualize_regions.py --system barr3 --activation 'Sigmoid' --path "New_repair/regions/verified_regions_barr3_Sigmoid_clean_repaired.pt" --n "clean_repaired"
-
-
-python visualize_regions.py --system barr3 --activation 'Tanh' --path "New_repair/regions/verified_regions_barr3_Tanh_repaired_v2.pt" --n "repaired_v2"
 
 
 # 运行指定激活函数和系统
@@ -125,181 +144,6 @@ python3 New_repair/main_clean.py --activation Sigmoid --system barr3
 python3 New_repair/main_clean_v2.py --activation Tanh --system barr3 --iterations 10 --num_samples 500 --lr 1e-2
 
 python3 New_repair/main_v2.py --activation Tanh   --system barr3 --iterations 10 --num_samples 500 --lr 1e-2
-
-
-
-
-
-
-
-
-
-for sys in simple_2d barr1 barr2 barr3; do
-  for act in Relu; do
-    python3 New_repair/main_modified_v2.py --activation $act --system $sys  --iterations 10 --num_samples 100 --max_depth 12 --lr 5e-3 
-  done
-done
-
-for sys in simple_2d barr1 barr2 barr3; do
-  for act in Tanh; do
-    python3 New_repair/main_modified_v2.py --activation $act --system $sys  --iterations 10 --num_samples 100 --max_depth 12 --lr 5e-3
-  done
-done
-
-for sys in simple_2d barr1 barr2 barr3; do
-  for act in Sigmoid; do
-    python3 New_repair/main_modified_v2.py --activation $act --system $sys  --iterations 10 --num_samples 100 --max_depth 12 --lr 5e-3
-  done
-done
-
-
-
-
-python visualize_regions.py --system barr1 --activation 'Sigmoid' --path "New_repair/regions/verified_regions_barr1_Sigmoid_clean_modified_v2.pt" --n "clean_repaired_v2"
-
-
-
-
-for sys in simple2d barr1 barr2 barr3; do
-  for act in Relu Tanh Sigmoid; do
-    python visualize_regions.py --activation $act --system $sys \
-      --path "New_repair/regions/verified_regions_${sys}_${act}_repaired_v6.pt" \
-      --n "repaired_v6"
-  done
-done
-
-
-
-for sys in simple2d ; do
-  for act in Relu Tanh Sigmoid; do
-    python visualize_regions.py --activation $act --system $sys \
-      --path "New_repair/regions/verified_regions_simple_2d_${act}_repaired_v6.pt" \
-      --n "repaired_v6"
-  done
-done
-
-
-
-
-
-
-for sys in barr1 barr2 barr3; do
-  for act in Relu; do
-    python3 New_repair/main_v4.py --activation $act --system $sys 
-  done
-done
-
-for sys in simple_2d barr1 barr2 barr3; do
-  for act in Relu; do
-    python3 New_repair/main_v1.py --activation $act --system $sys 
-  done
-done
-
-
-
-python3 New_repair/main_v1.py --activation Relu --system barr3
-
-
-
-for sys in simple_2d barr1 barr2 barr3; do
-  for act in Relu; do
-    python3 New_repair/main_v6.py -a $act -s $sys --rs-n 50 --rs-sigma 0.001 --num-inner-steps 5 --lr 5e-3
-  done
-done
-
-
-
-for sys in simple_2d barr1 barr2 barr3; do
-  for act in Sigmoid; do
-    python3 New_repair/main_v6.py -a $act -s $sys --rs-n 50 --rs-sigma 0.001 --num-inner-steps 5 --lr 5e-3
-  done
-done
-
-
-for sys in barr1 barr2 barr3; do
-  for act in Tanh; do
-    python3 New_repair/main_v6.py -a $act -s $sys --rs-n 50 --rs-sigma 0.001 --num-inner-steps 5 --lr 5e-3
-  done
-done
-
-
-
-for sys in simple_2d barr1 barr2 barr3; do
-  for act in Relu; do
-    CUDA_VISIBLE_DEVICES=0 python3 New_repair/main_v6.py -a $act -s $sys --rs-n 50 --rs-sigma 0.001 --num-inner-steps 5 --lr 5e-3 --max-depth 15
-  done
-done
-
-
-
-python New_repair/main_v5.py \
-    --activation Tanh \
-    --system barr1 \
-    --rs-n 50 \
-    --rs-sigma 0.001 \
-    --num-inner-steps 5 \
-    --lr 5e-3 \
-    --max-depth 12
-
-
-
-
-
-for sys in simple_2d barr1 barr2 barr3; do
-  for act in Relu; do
-    python3 New_repair/main_v7.py -a $act -s $sys --rs-n 50 --rs-sigma 0.001 --num-inner-steps 5 --lr 5e-3 --max-depth-start 10 --max-depth-limit 15 --depth-schedule "10,12,15" --plateau-threshold 0.5 --max-stagnant-iterations 5
-  done
-done
-
-
-# 
-
-
-for sys in simple_2d barr1 barr2 barr3; do
-  for act in Sigmoid; do
-    python3 New_repair/main_v8.py -a $act -s $sys --rs-n 50 --rs-sigma 0.001 --num-inner-steps 5 --lr 5e-3 --max-depth-start 10 --max-depth-limit 15 --depth-schedule "10,12,15" --plateau-threshold 0.5 --max-stagnant-iterations 5
-  done
-done
-
-
-for sys in simple_2d barr1 barr2 barr3; do
-  for act in Relu; do
-    python3 New_repair/main_v8.py -a $act -s $sys --rs-n 50 --rs-sigma 0.001 --num-inner-steps 5 --lr 5e-3 --max-depth-start 10 --max-depth-limit 15 --depth-schedule "10,12,15" --plateau-threshold 0.5 --max-stagnant-iterations 5
-  done
-done
-
-
-for sys in simple_2d barr1 barr2 barr3; do
-  for act in Tanh; do
-    python3 New_repair/main_v8.py -a $act -s $sys --rs-n 50 --rs-sigma 0.001 --num-inner-steps 5 --lr 5e-3 --max-depth-start 10 --max-depth-limit 15 --depth-schedule "10,12,15" --plateau-threshold 0.5 --max-stagnant-iterations 5
-  done
-done
-
-
-
- # 画图
-
-for sys in simple2d ; do   for act in Relu Tanh Sigmoid; do     python visualize_regions.py --activation $act --system $sys       --path "New_repair/regions/verified_regions_simple_2d_${act}_repaired_v7.pt"       --n "repaired_v7";   done; done
-
-for sys in simple2d barr1 barr2 barr3; do   for act in Relu Tanh Sigmoid; do     python visualize_regions.py --activation $act --system $sys       --path "New_repair/regions/verified_regions_${sys}_${act}_repaired_v7.pt"       --n "repaired_v7";   done; done
-
-
-
-for sys in barr3; do   for act in Relu Tanh Sigmoid; do     python visualize_regions.py --activation $act --system $sys       --path "New_repair/regions/verified_regions_${sys}_${act}_repaired_v9.pt"       --n "repaired_v9";   done; done
-
-
-for sys in simple2d ; do   for act in Relu Tanh Sigmoid; do     python visualize_regions.py --activation $act --system $sys       --path "New_repair/regions/verified_regions_simple_2d_${act}_repaired_v9.pt"       --n "repaired_v9";   done; done
-
-
-
-for sys in barr1 barr2 barr3 ; do   for act in Relu Tanh Sigmoid; do     python visualize_regions.py --activation $act --system $sys       --path "New_repair/regions/verified_regions_${sys}_${act}_v1.pt"       --n "None";   done; done
-
-
-
-for sys in barr1 barr2 barr3; do   for act in Relu Tanh Sigmoid; do     python visualize_regions.py --activation $act --system $sys       --path "New_repair/regions/verified_regions_${sys}_${act}_repaired_v8_clean.pt"       --n "repaired_v8_clean";   done; done
-
-
-
 
 
 
@@ -359,7 +203,6 @@ done
 python3 New_repair/main_clean_v8_ibp.py -a Tanh -s barr1 --num-inner-steps 1 --lr 5e-3 --max-depth-start 10 --max-depth-limit 15 --depth-schedule "10,12,15" --plateau-threshold 0.5 --max-stagnant-iterations 5
 
 
-for sys in barr1; do   for act in Tanh; do     python visualize_regions.py --activation $act --system $sys       --path "New_repair/regions/verified_regions_${sys}_${act}_repaired_v8_ibp.pt"       --n "repaired_v8_ibp";   done; done
 
 
 # 初始验证
@@ -383,7 +226,7 @@ for sys in barr1; do   for act in Tanh; do     python visualize_regions.py --act
 
 for sys in barr1 barr2 barr3 barr4; do
   for act in Sigmoid; do
-    python3 New_repair/main_clean_v9_ibp.py -a $act -s $sys --num-inner-steps 1 --lr 5e-3 --max-depth-start 10 --max-depth-limit 15 --depth-schedule "10,12,15" --plateau-threshold 0.5 --max-stagnant-iterations 5
+    CUDA_VISIBLE_DEVICES=6,7 python3 New_repair/main_clean_v9_ibp.py -a $act -s $sys --num-inner-steps 1 --lr 5e-3 --max-depth-start 10 --max-depth-limit 15 --depth-schedule "10,12,15" --plateau-threshold 0.5 --max-stagnant-iterations 5
   done
 done
 
@@ -401,53 +244,143 @@ for sys in barr1 barr2 barr3 barr4; do
   done
 done
 
+
+
+for sys in barr1 barr2 barr3; do   for act in Relu Tanh Sigmoid; do     python visualize_regions.py --activation $act --system $sys       --path "New_repair/regions/verified_regions_${sys}_${act}_repaired_v9_ibp.pt"       --n "repaired_v9_ibp";   done; done
+
+
+for sys in barr1 barr2 barr3; do   for act in Sigmoid; do     python visualize_regions.py --activation $act --system $sys       --path "New_repair/regions/verified_regions_${sys}_${act}_repaired_v9_ibp.pt"       --n "repaired_v9_ibp";   done; done
+
 # main_clean_v10_ibp  LBP验证 IBP算loss
 
-python3 New_repair/main_clean_v10_ibp.py -a Tanh -s barr1 --num-inner-steps 1 --lr 5e-3 --max-depth-start 10 --max-depth-limit 15 --depth-schedule "10,12,15" --plateau-threshold 0.5 --max-stagnant-iterations 5
-
-
-for sys in barr1; do   for act in Tanh; do     python visualize_regions.py --activation $act --system $sys       --path "New_repair/regions/verified_regions_${sys}_${act}_repaired_v10_ibp.pt"       --n "repaired_v10_ibp";   done; done
+python3 New_repair/main_clean_v10_ibp.py -a Sigmoid -s barr1 --num-inner-steps 1 --lr 5e-3 --max-depth-start 10 --max-depth-limit 15 --depth-schedule "10,12,15" --plateau-threshold 0.5 --max-stagnant-iterations 5
 
 
 
-for sys in  barr4; do
+
+
+for sys in barr4; do
+  for act in Relu Tanh; do
+    CUDA_VISIBLE_DEVICES=6,7 python3 New_repair/main_clean_v10_ibp.py -a $act -s $sys --num-inner-steps 1 --lr 5e-3 --max-depth-start 10 --max-depth-limit 15 --depth-schedule "10,12,15" --plateau-threshold 0.5 --max-stagnant-iterations 5
+  done
+done
+
+
+for sys in barr1 barr2 barr3 barr4; do
   for act in Sigmoid; do
     python3 New_repair/main_clean_v10_ibp.py -a $act -s $sys --num-inner-steps 1 --lr 5e-3 --max-depth-start 10 --max-depth-limit 15 --depth-schedule "10,12,15" --plateau-threshold 0.5 --max-stagnant-iterations 5
   done
 done
 
 
-for sys in barr4; do
-  for act in Relu Tanh; do
-    python3 New_repair/main_clean_v10_ibp.py -a $act -s $sys --num-inner-steps 1 --lr 5e-3 --max-depth-start 10 --max-depth-limit 15 --depth-schedule "10,12,15" --plateau-threshold 0.5 --max-stagnant-iterations 5
-  done
-done
-
-
-for sys in barr1 barr2 barr3 barr4; do
-  for act in Sigmoid Relu Tanh; do
-    python3 New_repair/main_clean_v10_ibp.py -a $act -s $sys --num-inner-steps 1 --lr 5e-3 --max-depth-start 10 --max-depth-limit 15 --depth-schedule "10,12,15" --plateau-threshold 0.5 --max-stagnant-iterations 5
-  done
-done
-
-
-for sys in barr1 barr2 barr3 barr4; do
-  for act in Relu; do
-    python3 New_repair/main_clean_v10_ibp.py -a $act -s $sys --num-inner-steps 1 --lr 5e-3 --max-depth-start 10 --max-depth-limit 15 --depth-schedule "10,12,15" --plateau-threshold 0.5 --max-stagnant-iterations 5
-  done
-done
-
-
-for sys in barr1 barr2 barr3 barr4; do
+for sys in barr1 barr2 barr3; do
   for act in Tanh; do
     python3 New_repair/main_clean_v10_ibp.py -a $act -s $sys --num-inner-steps 1 --lr 5e-3 --max-depth-start 10 --max-depth-limit 15 --depth-schedule "10,12,15" --plateau-threshold 0.5 --max-stagnant-iterations 5
   done
 done
 
 
+
+for sys in barr1 barr2 barr3; do   for act in Relu Tanh Sigmoid; do     python visualize_regions.py --activation $act --system $sys       --path "New_repair/regions/verified_regions_${sys}_${act}_repaired_v10_ibp.pt"       --n "repaired_v10_ibp";   done; done
+
+
+for sys in barr1 barr2 barr3; do   for act in  Tanh; do     python visualize_regions.py --activation $act --system $sys       --path "New_repair/regions/verified_regions_${sys}_${act}_repaired_v10_ibp.pt"       --n "repaired_v10_ibp";   done; done
+
+
+
+for sys in barr4; do
+  for act in Sigmoid Relu Tanh; do
+    CUDA_VISIBLE_DEVICES=6,7 python3 New_repair/main_clean_v10_ibp.py -a $act -s $sys --num-inner-steps 5 --lr 5e-3 --max-depth-start 10 --max-depth-limit 12 --depth-schedule "10,12" --plateau-threshold 0.5 --max-stagnant-iterations 5
+  done
+done
+
 # main_compare_v10
 
-python New_repair/main_compare_v10.py -a Tanh -s barr1
+CUDA_VISIBLE_DEVICES=6,7 python New_repair/main_compare_v10.py -a Sigmoid -s barr1
 
 
 
+simple2d barr1 barr2 barr3 barr4 cartpole
+
+
+
+for sys in simple2d barr1 barr2 barr3 barr4 cartpole; do
+  for act in Sigmoid LeakyRelu Tanh; do
+    CUDA_VISIBLE_DEVICES=7 python3 New_repair/main_compare_v10.py -a $act -s $sys 
+  done
+done
+
+for sys in  cartpole; do
+  for act in Sigmoid Tanh; do
+    CUDA_VISIBLE_DEVICES=7 python3 New_repair/main_compare_v10.py -a $act -s $sys 
+  done
+done
+
+# Verify_LBP
+
+CUDA_VISIBLE_DEVICES=6,7 python3 Verify_LBP.py -a Sigmoid -s barr2
+
+
+for sys in barr3; do   for act in Relu Tanh Sigmoid; do     python visualize_regions.py --activation $act --system $sys       --path "New_repair/regions/verified_regions_${sys}_${act}_repaired_v9.pt"       --n "repaired_v9";   done; done
+
+
+python visualize_regions.py --activation Relu --system barr3       --path "New_repair/nr_results_verify_lbp/lbp_regions_barr3_Relu_v9_ibp_maxdepth15.pt"  --n "repaired_v9_ibp_new"
+
+
+python visualize_regions.py --activation Sigmoid --system barr2       --path "New_repair/nr_results_verify_lbp/lbp_regions_barr2_Sigmoid_v9_ibp_maxdepth15.pt"  --n "repaired_v9_ibp_new"
+
+
+
+# main_clean_v10_lbp
+
+ CUDA_VISIBLE_DEVICES=5,6 python New_repair/main_clean_v10_lbp.py -a Tanh -s barr1
+
+
+# main_clean_v11_lbp
+
+ for sys in  barr1 barr2 barr3; do
+    CUDA_VISIBLE_DEVICES=7 python3 New_repair/main_clean_v11_lbp.py -a Relu -s $sys
+done
+
+
+for sys in barr4; do
+  for act in Sigmoid Relu Tanh; do
+    CUDA_VISIBLE_DEVICES=6,7 python3 New_repair/main_clean_v11_lbp.py -a $act -s $sys 
+  done
+done
+
+
+
+for sys in simple2d barr1 barr2 barr3 barr4 cartpole; do
+  for act in Sigmoid LeakyRelu Tanh; do
+    CUDA_VISIBLE_DEVICES=7 python3 New_repair/main_clean_v11_lbp.py -a $act -s $sys 
+  done
+done
+
+
+
+for sys in cartpole; do
+  for act in Sigmoid LeakyRelu Tanh; do
+    CUDA_VISIBLE_DEVICES=7 python3 New_repair/main_clean_v11_lbp.py -a $act -s $sys 
+  done
+done
+
+
+# main_clean_v12_lbp_w
+
+
+for sys in simple2d barr1 barr2 barr3 barr4 cartpole; do
+  for act in Sigmoid LeakyRelu Tanh; do
+    CUDA_VISIBLE_DEVICES=7 python3 New_repair/main_clean_v12_lbp_w.py -a $act -s $sys 
+  done
+done
+
+
+# main_clean_v12_lbp_gp
+
+
+for sys in simple2d barr1 barr2 barr3 barr4 cartpole; do
+  for act in Sigmoid LeakyRelu Tanh; do
+    CUDA_VISIBLE_DEVICES=7 python3 New_repair/main_clean_v12_lbp_gp.py -a $act -s $sys 
+  done
+done

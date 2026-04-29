@@ -164,7 +164,7 @@ class BarrierNN(nn.Module):
             input_size (int)
             hidden_sizes (list[int])
             device (torch.device or None)
-            activation_fnc (str): "Tanh", "Relu", or "Sigmoid"
+            activation_fnc (str): "Tanh", "Relu", "Sigmoid", or "LeakyRelu"
             seed (int or None): if given, sets torch.manual_seed for reproducibility
         """
         super().__init__()
@@ -185,6 +185,9 @@ class BarrierNN(nn.Module):
         elif activation_fnc == "Sigmoid":
             activation_layer = nn.Sigmoid()
             init_type = "xavier_tanh"
+        elif activation_fnc == "LeakyRelu":
+            activation_layer = nn.LeakyReLU(negative_slope=0.01)
+            init_type = "kaiming_relu"
 
         layers = []
         prev_size = input_size

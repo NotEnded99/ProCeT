@@ -32,7 +32,7 @@ import time
 from lbp_neural_cbf.cbf.fossil_dynamics import (
     Barrier1System, Barrier2System, Barrier3System, Barrier4System
 )
-from lbp_neural_cbf.cbf.cbf_dynamics import Simple2DSystem
+from lbp_neural_cbf.cbf.cbf_dynamics import Simple2DSystem, CartPoleSystem
 from lbp_neural_cbf.cbf.network import BarrierNN
 from lbp_neural_cbf.translators import TorchTranslator
 from lbp_neural_cbf.linearization.linear_derivative_bounds import CrownPartialLinearization
@@ -48,15 +48,16 @@ from New_repair.geometry_module_new import compute_simplex_bound_batch
 
 # 支持的动力学系统映射
 DYNAMICS_SYSTEMS = {
-    'simple_2d': Simple2DSystem,
+    'simple2d': Simple2DSystem,
     'barr1': Barrier1System,
     'barr2': Barrier2System,
     'barr3': Barrier3System,
     'barr4': Barrier4System,
+    "cartpole": CartPoleSystem, 
 }
 
 # 支持的激活函数
-SUPPORTED_ACTIVATIONS = ['Relu', 'Tanh', 'Sigmoid']
+SUPPORTED_ACTIVATIONS = ['Relu', 'Tanh', 'Sigmoid', 'LeakyRelu']
 
 
 def pytorch_to_onnx(model, onnx_path, input_dim=2):
@@ -219,28 +220,9 @@ def check_stop_criteria(F_h_positive_in_unsafe, F_safe_cbf_violation, F_depth_li
     return False, ""
 
 
-def decide_next_max_depth(current_max_depth, current_phase, definitive_fail_count, uncertain_fail_count, depth_schedule, last_verification_pass_rate):
-    if current_phase == 1:
-        if definitive_fail_count == 0:
-            try:
-                current_idx = depth_schedule.index(current_max_depth)
-                next_max_depth = depth_schedule[current_idx + 1] if current_idx + 1 < len(depth_schedule) else current_max_depth
-            except ValueError:
-                next_max_depth = min(current_max_depth + 2, max(depth_schedule))
-            return next_max_depth, 2, "DEFINITIVE_CLEARED"
-        return current_max_depth, 1, "PHASE1_CONTINUE"
-    else:
-        try:
-            current_idx = depth_schedule.index(current_max_depth)
-        except ValueError:
-            current_idx = -1
-        if definitive_fail_count > 0:
-            return current_max_depth, 2, "PHASE2_DEFINITIVE_REMAIN"
-        if uncertain_fail_count == 0:
-            return current_max_depth, 2, "PHATE2_ALL_CLEARED"
-        if current_idx + 1 < len(depth_schedule):
-            return depth_schedule[current_idx + 1], 2, f"PHASE2_DEPTH_INCREASE"
-        return current_max_depth, 2, "PHASE2_MAX_DEPTH"
+def decide_next_max_depth(current_max_depth, current_phase, definitive_fail_count, uncertain_fail_count, depth_schedule, last_verification_pass_rate, max_depth_limit):
+    # 直接使用最大深度开始验证，不再渐进增加深度
+    return max_depth_limit, 2, "DIRECT_MAX_DEPTH"
 
 
 # =============================================================================
@@ -473,6 +455,24 @@ def compute_repair_loss_and_grad_last_layer(
     return total_loss, cbf_loss, g_last_weight_total, g_last_bias_total
 
 
+
+def shrink_and_perturb(model, rho_s=0.99, perturb_scale=0.01, device=None):
+    """
+    Shrink-and-Perturb: 当修复失败时对整个神经网络所有层参数进行扰动。
+    1. Shrink: W = rho_s * W (向零点收缩)
+    2. Perturb: W = W + ζ (添加随机扰动)
+    """
+    with torch.no_grad():
+        for name, param in model.network.named_parameters():
+            # Shrink: 向零点收缩
+            param.mul_(rho_s)
+            # Perturb: 添加随机扰动
+            perturbation = torch.rand_like(param) * 2 * perturb_scale - perturb_scale
+            param.add_(perturbation)
+
+    print(f"    [Shrink-and-Perturb] rho_s={rho_s}, perturb_scale={perturb_scale}")
+
+
 # =============================================================================
 # 主函数
 # =============================================================================
@@ -482,17 +482,19 @@ def main():
     parser.add_argument('--activation', '-a', type=str, required=True, choices=SUPPORTED_ACTIVATIONS)
     parser.add_argument('--system', '-s', type=str, required=True, choices=list(DYNAMICS_SYSTEMS.keys()))
     parser.add_argument('--top-n-protect', type=int, default=500)
-    parser.add_argument('--max-depth-start', type=int, default=10)
-    parser.add_argument('--max-depth-limit', type=int, default=20)
-    parser.add_argument('--depth-schedule', type=str, default="10,12,15")
+    parser.add_argument('--max-depth-start', type=int, default=12)
+    parser.add_argument('--max-depth-limit', type=int, default=12)
+    parser.add_argument('--depth-schedule', type=str, default="12")
     parser.add_argument('--num-inner-steps', type=int, default=5)
     parser.add_argument('--lr', type=float, default=5e-3)
     parser.add_argument('--target-pass-rate', type=float, default=100.0)
     parser.add_argument('--plateau-threshold', type=float, default=0.5)
     parser.add_argument('--max-stagnant-iterations', type=int, default=5)
-    parser.add_argument('--max-total-iterations', type=int, default=30)
+    parser.add_argument('--max-total-iterations', type=int, default=10)
     parser.add_argument('--alpha-reg', type=float, default=1.0, help='正则项系数 α')
     parser.add_argument('--beta-cbf', type=float, default=5.0, help='CBF损失系数 β')
+    parser.add_argument('--rho-s', type=float, default=0.98, help='Shrink-and-Perturb 收缩因子')
+    parser.add_argument('--perturb-scale', type=float, default=0.02, help='Shrink-and-Perturb 扰动幅度')
 
     args = parser.parse_args()
     activation = args.activation
@@ -509,6 +511,8 @@ def main():
     max_total_iterations = args.max_total_iterations
     alpha_reg = args.alpha_reg
     beta_cbf = args.beta_cbf
+    rho_s = args.rho_s
+    perturb_scale = args.perturb_scale
 
     SEED = 42
     random.seed(SEED)
@@ -600,7 +604,7 @@ def main():
     torch.save(model.state_dict(), pytorch_save_path)
     onnx_path = f"New_repair/regions/{dynamics_model.system_name}_{activation}_cbf_repaired_compare_v10.onnx"
     pytorch_to_onnx(model, onnx_path, input_dim=dynamics_model.input_dim)
-    start_depth_results = verify_model(pytorch_save_path, dynamics_model, max_depth=max_depth_start)
+    start_depth_results = verify_model(pytorch_save_path, dynamics_model, max_depth=max_depth_limit)
 
     start_depth_safety_metrics = compute_safety_metrics_v8(
         start_depth_results.get('V_safe', []), start_depth_results.get('V_unsafe', []),
@@ -622,6 +626,8 @@ def main():
     definitive_fail_prev = total_fail
     first_max_depth_pass_rate = None
     at_max_depth_consecutive_no_improve = 0
+    consecutive_no_improve = 0  # 连续没有改进的次数
+    last_certified_percentage = initial_harmonic_pass_rate
 
     # 保存原始最后一层权重（用于正则项）
     W_orig, b_orig = get_last_layer_params(model)
@@ -642,7 +648,7 @@ def main():
             break
 
         next_max_depth, next_phase, depth_reason = decide_next_max_depth(
-            current_max_depth, current_phase, definitive_fail, uncertain_fail, depth_schedule, initial_harmonic_pass_rate,
+            current_max_depth, current_phase, definitive_fail, uncertain_fail, depth_schedule, initial_harmonic_pass_rate, max_depth_limit,
         )
         print(f"\n[迭代 {iteration+1}] depth_reason={depth_reason}, max_depth {current_max_depth}->{next_max_depth}, phase {current_phase}->{next_phase}")
 
@@ -757,6 +763,119 @@ def main():
 
         print(f"\n[迭代 {iteration+1}.7] 验证结果: HarmonicMeanPassRate={certified_percentage:.2f}%, R_safe={R_safe_pct:.2f}%, R_unsafe={R_unsafe_pct:.2f}%")
 
+        # ---------- Shrink-and-Perturb: 验证失败时应用 ----------
+        definitive_fail_after = len(F_h_positive_in_unsafe_init) + len(F_safe_cbf_violation_init)
+        if definitive_fail_after > 0 and certified_percentage < target_pass_rate:
+            print(f"\n[迭代 {iteration+1}.8] 验证失败，应用 Shrink-and-Perturb (failed regions={definitive_fail_after})")
+
+            shrink_and_perturb(model, rho_s=rho_s, perturb_scale=perturb_scale, device=device)
+
+            # 重新提取特征点进行修复
+            failed_safe_feature_points = extract_feature_points_from_regions(list(F_safe_cbf_violation_init), device)
+            failed_unsafe_feature_points = extract_feature_points_from_regions(list(F_h_positive_in_unsafe_init), device)
+
+            n_unsafe_fp = failed_unsafe_feature_points.shape[0]
+            n_safe_fp = failed_safe_feature_points.shape[0]
+
+            if n_unsafe_fp > 0 or n_safe_fp > 0:
+                for inner_step in range(num_inner_steps):
+                    device = next(model.parameters()).device
+                    dtype = next(model.parameters()).dtype
+
+                    total_loss_sum = 0.0
+                    total_n = 0
+
+                    g_last_weight_total = torch.zeros_like(model.network[-1].weight)
+                    g_last_bias_total = torch.zeros_like(model.network[-1].bias) if model.network[-1].bias is not None else None
+
+                    for unsafe_start in range(0, n_unsafe_fp, 1024):
+                        unsafe_end = min(unsafe_start + 1024, n_unsafe_fp)
+                        unsafe_chunk = failed_unsafe_feature_points[unsafe_start:unsafe_end]
+                        chunk_loss, chunk_cbf_loss, chunk_g_w, chunk_g_b = compute_repair_loss_and_grad_last_layer(
+                            model, dynamics_model, torch.empty(0, 2, device=device, dtype=dtype), unsafe_chunk,
+                            W_orig, b_orig,
+                            margin=0.1, cbf_margin=0.0, beta=beta_cbf, alpha_reg=alpha_reg,
+                            grad_clip_norm=10.0, verbose=False, translator=translator,
+                        )
+                        total_loss_sum += chunk_loss * unsafe_chunk.shape[0]
+                        total_n += unsafe_chunk.shape[0]
+                        g_last_weight_total.add_(chunk_g_w)
+                        if chunk_g_b is not None and g_last_bias_total is not None:
+                            g_last_bias_total.add_(chunk_g_b)
+
+                    for safe_start in range(0, n_safe_fp, 1024):
+                        safe_end = min(safe_start + 1024, n_safe_fp)
+                        safe_chunk = failed_safe_feature_points[safe_start:safe_end]
+                        chunk_loss, chunk_cbf_loss, chunk_g_w, chunk_g_b = compute_repair_loss_and_grad_last_layer(
+                            model, dynamics_model, safe_chunk, torch.empty(0, 2, device=device, dtype=dtype),
+                            W_orig, b_orig,
+                            margin=0.1, cbf_margin=0.0, beta=beta_cbf, alpha_reg=alpha_reg,
+                            grad_clip_norm=10.0, verbose=False, translator=translator,
+                        )
+                        total_loss_sum += chunk_loss * safe_chunk.shape[0]
+                        total_n += safe_chunk.shape[0]
+                        g_last_weight_total.add_(chunk_g_w)
+                        if chunk_g_b is not None and g_last_bias_total is not None:
+                            g_last_bias_total.add_(chunk_g_b)
+
+                    loss_val = total_loss_sum / total_n if total_n > 0 else 0.0
+                    grad_norm = g_last_weight_total.norm().item()
+                    if g_last_bias_total is not None:
+                        grad_norm += g_last_bias_total.norm().item()
+
+                    g_clip = 10.0
+                    if grad_norm > g_clip:
+                        scale = g_clip / grad_norm
+                        g_last_weight_total.mul_(scale)
+                        if g_last_bias_total is not None:
+                            g_last_bias_total.mul_(scale)
+                        grad_norm = g_clip
+
+                    update_norm = last_layer_gradient_update(model, g_last_weight_total, g_last_bias_total, current_lr)
+                    print(f"    [Shrink-Perturb 内步 {inner_step+1}] loss={loss_val:.6f}, |g|={grad_norm:.4f}, |d|={update_norm:.6f}")
+
+                pytorch_save_path = f"New_repair/regions/{dynamics_model.system_name}_{activation}_cbf_repaired_compare_v10.pth"
+                torch.save(model.state_dict(), pytorch_save_path)
+                onnx_path = f"New_repair/regions/{dynamics_model.system_name}_{activation}_cbf_repaired_compare_v10.onnx"
+                pytorch_to_onnx(model, onnx_path, input_dim=dynamics_model.input_dim)
+
+                results = verify_model(pytorch_save_path, dynamics_model, max_depth=current_max_depth)
+
+                safety_metrics = compute_safety_metrics_v8(
+                    results.get('V_safe', []), results.get('V_unsafe', []),
+                    results.get('F_h_positive_in_unsafe', []), results.get('F_safe_cbf_violation', []),
+                    results.get('F_depth_limit_reached_unsafe', []), results.get('F_depth_limit_reached_safe', []),
+                    results.get('F_unsafe_cannot_split', []),
+                )
+
+                certified_percentage = safety_metrics['HarmonicMeanPassRate'] * 100
+                R_safe_pct = safety_metrics['R_safe'] * 100
+                R_unsafe_pct = safety_metrics['R_unsafe'] * 100
+
+                print(f"\n[迭代 {iteration+1}.9] Shrink-and-Perturb 后验证结果: HarmonicMeanPassRate={certified_percentage:.2f}%, R_safe={R_safe_pct:.2f}%, R_unsafe={R_unsafe_pct:.2f}%")
+
+                verified_regions_path = f"New_repair/regions/verified_regions_{dynamics_model.system_name}_{activation}_repaired_compare_v10.pt"
+                regions_to_save = {
+                    'V_safe': results.get('V_safe', V_safe_init), 'V_unsafe': results.get('V_unsafe', V_unsafe_init),
+                    'F_h_positive_in_unsafe': results.get('F_h_positive_in_unsafe', F_h_positive_in_unsafe_init),
+                    'F_safe_cbf_violation': results.get('F_safe_cbf_violation', F_safe_cbf_violation_init),
+                    'F_depth_limit_reached_unsafe': results.get('F_depth_limit_reached_unsafe', F_depth_limit_reached_unsafe_init),
+                    'F_depth_limit_reached_safe': results.get('F_depth_limit_reached_safe', F_depth_limit_reached_safe_init),
+                    'F_unsafe_cannot_split': results.get('F_unsafe_cannot_split', F_unsafe_cannot_split_init),
+                    'Certified percentage': certified_percentage,
+                }
+                torch.save(regions_to_save, verified_regions_path)
+
+                updated_data = torch.load(verified_regions_path, map_location=device, weights_only=False)
+                V_safe_init = updated_data['V_safe']
+                V_unsafe_init = updated_data['V_unsafe']
+                F_h_positive_in_unsafe_init = updated_data['F_h_positive_in_unsafe']
+                F_safe_cbf_violation_init = updated_data['F_safe_cbf_violation']
+                F_depth_limit_reached_unsafe_init = updated_data['F_depth_limit_reached_unsafe']
+                F_depth_limit_reached_safe_init = updated_data['F_depth_limit_reached_safe']
+                F_unsafe_cannot_split_init = updated_data['F_unsafe_cannot_split']
+
+
         if current_max_depth >= max_depth_limit:
             if first_max_depth_pass_rate is None:
                 first_max_depth_pass_rate = certified_percentage
@@ -809,6 +928,17 @@ def main():
             'top_n_used': top_n_used if 'top_n_used' in dir() else 0,
             'repair_type': repair_type if 'repair_type' in dir() else 'N/A',
         })
+
+        # 连续5次没有改进则停止
+        if certified_percentage <= last_certified_percentage + 0.01:  # 允许0.01%的浮点误差
+            consecutive_no_improve += 1
+            print(f"    [进度] 连续 {consecutive_no_improve} 次没有改进")
+            if consecutive_no_improve >= 5:
+                print(f"\n  === 连续5次没有改进，停止迭代 ===")
+                break
+        else:
+            consecutive_no_improve = 0
+        last_certified_percentage = certified_percentage
 
         current_max_depth = next_max_depth
         current_phase = next_phase

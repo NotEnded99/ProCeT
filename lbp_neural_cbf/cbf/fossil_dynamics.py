@@ -4,7 +4,7 @@ import numpy as np
 import torch
 
 from ..translators import NumpyTranslator, TorchTranslator
-from .cbf_dynamics import CBFDynamicalSystem
+from .cbf_dynamics import CBFDynamicalSystem, ParabolicUnsafeDomain
 from .domain import BoxDomain, BoxExteriorDomain, CircleDomain, ComplementDomain, Domain, ProductDomain, SetMinusDomain, UnionDomain, parse_domain_definition
 
 
@@ -308,9 +308,11 @@ class Barrier2System(CBFDynamicalSystem):
         # Parse unsafe set into domain object
         # self.unsafe_set_interior = CircleDomain(center=[0.7, -0.7], radius=0.3)
         self.unsafe_set_interior = UnionDomain([
-                                    CircleDomain(center=[0.7, -0.7], radius=0.3),   # 原有的圆
-                                    CircleDomain(center=[-0.5, 0.5], radius=0.25),  # 新增的圆
-                                    BoxDomain([[0.5, 0.9], [-1.1, -0.7]]),          # 新增的矩形，与Circle1相交（面积缩小至0.16）
+                                    CircleDomain(center=[0.8, -0.8], radius=0.45),   # 原有的圆
+                                    # 抛物线区域: 顶点在 (-1.8, -1.5)，弧在右侧，开口向左，紧贴左下角边界
+                                    # unsafe: x <= -1.8 - (y + 1.5)^2，即 x + 1.8 + (y + 1.5)^2 <= 0
+                                    ParabolicUnsafeDomain(vertex=[0, 2], axis='horizontal', opening=1,
+                                                          bounds={'x_min': -2.0, 'x_max': 2.0, 'y_min': -2.0, 'y_max': 2.0}),
                                 ])
         self.unsafe_set_exterior = BoxExteriorDomain(self.input_domain.bounds)
         self.unsafe_set = UnionDomain([self.unsafe_set_interior, self.unsafe_set_exterior])
@@ -499,11 +501,13 @@ class Barrier3System(CBFDynamicalSystem):
         #     known_separated=True,
         # )
         self.unsafe_set_interior = UnionDomain([
-                        CircleDomain(center=[-1, -1], radius=0.4),                           # 原有的圆
+                        CircleDomain(center=[-2, -1], radius=0.4),                           # 原有的圆
                         LShapeDomain(BoxDomain([[0.4, 0.6], [0.1, 0.5]]),
                                     BoxDomain([[0.4, 0.8], [0.1, 0.3]])),                  # 原有的L形
-                        CircleDomain(center=[1.0, 0.0], radius=0.3),                         # 新增的圆
-                        BoxDomain([[-1.4, -0.6], [-0.7, -0.1]]),                              # 新增的矩形，与Circle1相交（面积缩小至0.24）
+                        # 抛物线区域: 顶点在 (2.0, -1.5)，弧在左侧，开口向右，紧贴右下角边界
+                        # unsafe: x <= 2.0 - (y + 1.5)^2，即 x - 2.0 + (y + 1.5)^2 <= 0
+                        ParabolicUnsafeDomain(vertex=[0.3, -2.4], axis='horizontal', opening=-1,
+                                              bounds={'x_min': -3.0, 'x_max': 2.5, 'y_min': -2.0, 'y_max': 1.0}),
                     ])
         
         self.unsafe_set_exterior = BoxExteriorDomain(self.input_domain.bounds)
@@ -1097,6 +1101,187 @@ class HighOrd6System(CBFDynamicalSystem):
         return self.unsafe_set_interior
 
 
+class PlanarQuadrotorSystem(CBFDynamicalSystem):
+    """
+    Planar Quadrotor system with affine control for testing CBF verification.
+
+    State: x = [x, y, theta, x_dot, y_dot, theta_dot] = [x1, x2, x3, x4, x5, x6]
+    Control: u = [u1, u2] (thrust for two rotors)
+
+    Dynamics:
+    - ẋ = x4
+    - ẏ = x5
+    - θ̇ = x6
+    - ẍ = (1/mass) * (u1 + u2) * sin(θ)
+    - ÿ = (1/mass) * (u1 + u2) * cos(θ) - g
+    - θ̈ = (1/J) * (ℓ/2) * (u2 - u1)
+
+    Parameters:
+    - mass = 1.0 kg
+    - g = 9.81 m/s²
+    - ℓ = 0.3 m (tip to tip distance)
+    - J = 0.2 * mass * ℓ² = 0.018 kg·m²
+
+    Control bounds: u ∈ [4, 6] for both u1 and u2
+    """
+
+    def __init__(self, alpha=1.0):
+        super().__init__()
+        self.system_name = "planarquad"
+        self.input_dim = 6
+        self.output_dim = 6
+        self.control_dim = 2
+        self.alpha = alpha
+
+        # Physical parameters
+        self.mass = 1.0
+        self.g = 9.81
+        self.ℓ = 0.3
+        self.J = 0.2 * self.mass * self.ℓ ** 2  # 0.018
+
+        # Input domain for grid generation and verification
+        self.input_domain = BoxDomain([[0, 4], [0, 4], [-0.1, 0.1], [-1, 1], [-1, 1], [-1, 1]])
+
+        # Safe set: within the input domain
+        self.safe_set = BoxDomain(self.input_domain.bounds)
+
+        # Unsafe set: a smaller region inside the safe set
+        self.unsafe_set_interior = BoxDomain([[1.5, 2.5], [0, 2], [-0.1, 0.1], [-1, 1], [-1, 1], [-1, 1]])
+        self.unsafe_set_exterior = BoxExteriorDomain(self.input_domain.bounds)
+        self.unsafe_set = UnionDomain([self.unsafe_set_interior, self.unsafe_set_exterior])
+
+        # Control bounds
+        self.u_min = np.array([4.0, 4.0])
+        self.u_max = np.array([6.0, 6.0])
+
+        # Default translator for verification
+        self.translator = NumpyTranslator()
+
+        self.hidden_sizes = [64, 64]  # Hidden layer sizes for neural network
+
+        # Delta for region generation (half-width of hyperrectangles)
+        self.delta = np.array([0.5, 0.5, 0.5, 0.5, 0.5, 0.5])
+
+    def compute_dynamics(self, x, translator, u=None):
+        """
+        Affine control system: dx/dt = f(x) + g(x)u
+
+        Uses compute_f and compute_g for consistency with verification.
+
+        Args:
+            x: State [x1, x2, x3, x4, x5, x6] with shape [6] or [batch_size, 6]
+            u: Control input [u1, u2] with shape [2] or [batch_size, 2] (optional)
+            translator: Mathematical operations translator
+
+        Returns:
+            State derivatives with shape [batch_size, 6]
+        """
+        # Compute drift term f(x)
+        f_x = self.compute_f(x, translator)
+
+        if u is not None:
+            g_x = self.compute_g(x, translator)
+            g_u = translator.matrix_vector(g_x, u)
+            return f_x + g_u
+        else:
+            return f_x
+
+    def compute_f(self, x, translator):
+        """
+        Compute drift dynamics f(x) without control.
+
+        f(x) = [x4, x5, x6, 0, -g, 0]
+
+        Args:
+            x: State [x1, x2, x3, x4, x5, x6] with shape [6] or [batch_size, 6]
+            translator: Mathematical operations translator
+
+        Returns:
+            Drift term with shape [6] or [batch_size, 6]
+        """
+        x1, x2, x3, x4, x5, x6 = x[..., 0], x[..., 1], x[..., 2], x[..., 3], x[..., 4], x[..., 5]
+        dx1 = x4
+        dx2 = x5
+        dx3 = x6
+        dx4 = translator.zeros_like(x1)  # No drift in x_dot
+        dx5 = -self.g * translator.ones_like(x1)  # Gravity term
+        dx6 = translator.zeros_like(x1)  # No drift in theta_dot
+        return translator.stack([dx1, dx2, dx3, dx4, dx5, dx6], dim=-1)
+
+    def compute_g(self, x, translator):
+        """
+        Compute control input matrix g(x).
+
+        g(x) = [[0, 0],
+                [0, 0],
+                [0, 0],
+                [sin(θ)/mass, sin(θ)/mass],
+                [cos(θ)/mass, cos(θ)/mass],
+                [-ℓ/(2J), ℓ/(2J)]]
+
+        Args:
+            x: State [x1, x2, x3, x4, x5, x6] with shape [batch_size, 6] or [6]
+            translator: Mathematical operations translator
+
+        Returns:
+            Control matrix with shape [batch_size, 6, 2] for batched inputs or [6, 2] for single inputs
+        """
+        theta = x[..., 2]
+        sin_theta = translator.sin(theta)
+        cos_theta = translator.cos(theta)
+
+        inv_mass = 1.0 / self.mass
+        inv_J = 1.0 / self.J
+        half_ell_over_J = self.ℓ / (2.0 * self.J)
+
+        # Row 0: dx1/dt = 0*u1 + 0*u2
+        g1 = translator.zeros_like(theta)
+        # Row 1: dx2/dt = 0*u1 + 0*u2
+        g2 = translator.zeros_like(theta)
+        # Row 2: dx3/dt = 0*u1 + 0*u2
+        g3 = translator.zeros_like(theta)
+        # Row 3: dx4/dt = sin(θ)/mass * u1 + sin(θ)/mass * u2
+        g4 = inv_mass * sin_theta
+        # Row 4: dx5/dt = cos(θ)/mass * u1 + cos(θ)/mass * u2
+        g5 = inv_mass * cos_theta
+        # Row 5: dx6/dt = -ℓ/(2J) * u1 + ℓ/(2J) * u2
+        g6_u1 = translator.zeros_like(theta) - half_ell_over_J
+        g6_u2 = translator.zeros_like(theta) + half_ell_over_J
+
+        # Stack to form [batch_size, 6, 2]
+        g_u1 = translator.stack([g1, g2, g3, g4, g5, g6_u1], dim=-1)
+        g_u2 = translator.stack([g1, g2, g3, g4, g5, g6_u2], dim=-1)
+        g_x = translator.stack([g_u1, g_u2], dim=-2)
+
+        return g_x
+
+    def safe_set_constraint(self, x, translator):
+        """
+        True safe set constraint using the domain objects.
+        This represents the actual safe region that the system must stay within.
+
+        Args:
+            x: State tensor with shape [batch_size, 6]
+            translator: Mathematical operations translator
+
+        Returns:
+            Constraint values with shape [batch_size] where positive means safe
+        """
+        # Use the domain object to compute the constraint
+        h = self.safe_set.constraint(x, translator)
+        return h
+
+    @property
+    def unsafe_domain(self):
+        """
+        Property to expose the unsafe domain.
+
+        Returns:
+            Domain: The unsafe domain object.
+        """
+        return self.unsafe_set_interior
+
+
 class HighOrd8System(CBFDynamicalSystem):
     """
     Higher order 8 dynamical system with affine control for testing CBF verification.
@@ -1121,9 +1306,6 @@ class HighOrd8System(CBFDynamicalSystem):
 
         # Parse unsafe set into domain object
         self.unsafe_set_interior = ComplementDomain(self.circle_domain, self.input_domain.bounds)
-        # self.unsafe_set_interior = CircleDomain(center=[-2.0, -2.0, -2.0, -2.0], radius=0.4)
-        # self.unsafe_set_exterior = ComplementDomain(self.circle_domain, self.input_domain.bounds)
-        # self.unsafe_set = UnionDomain([self.unsafe_set_interior, self.unsafe_set_exterior])
 
         self.safe_set = self.circle_domain
 

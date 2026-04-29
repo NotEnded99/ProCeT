@@ -1,4 +1,5 @@
 import numpy as np
+import torch
 
 
 class NumpyTranslator:
@@ -221,6 +222,8 @@ class NumpyTranslator:
 
         :return: np.ndarray
         """
+        if isinstance(a, torch.Tensor):
+            a = a.cpu()
         return np.asarray(a, dtype=self.dtype)
 
     def einsum(self, equation, *operands):

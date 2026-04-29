@@ -472,7 +472,8 @@ def main():
     parser.add_argument(
         '--output-dir', '-o',
         type=str,
-        default='/data/mzm/mzm_Verification/verification-of-neural-cbf-mzm4/New_repair/figures',
+        # default='/data/mzm/mzm_Verification/verification-of-neural-cbf-mzm4/New_repair/figures',
+        default='/data/mzm/mzm_Verification/Repair_NCBF/New_repair/figures',
     )
 
     parser.add_argument(
