@@ -222,10 +222,10 @@ All three scripts share the same argument parser ([`scripts/_common.py`](scripts
 
 ### α/β-ProCeT only
 
-| Flag | Default (α / β) | Description |
+| Flag | Default  | Description |
 |------|-----------------|-------------|
-| `--top-n-protect` | `100` / `50` | Number of most-vulnerable regions to protect / audit. |
-| `--delta-theta-norm-bound` | `0.01` / `0.05` | L2 trust-region radius ζ for the SOCP update. |
+| `--top-n-protect` | `50` | Number of most-vulnerable regions to protect / audit. |
+| `--delta-theta-norm-bound` | `0.05` | L2 trust-region radius ζ for the SOCP update. |
 
 ### Systems and Depths
 
@@ -235,17 +235,6 @@ All three scripts share the same argument parser ([`scripts/_common.py`](scripts
 | `barr1`, `barr2`, `barr3` | 12 | FOSSIL barrier systems |
 | `barr4` | 14 | Higher-dimensional barrier system |
 | `cartpole` | 14 | Cartpole |
-
-### Per-method learning rates
-
-The `--lr` flag is a fallback. Each method overrides the LR by depth in `get_lr`:
-
-| Method | Phase | depth=12 | depth=14 |
-|--------|-------|----------|----------|
-| CeT | — | 5e-3 | 5e-3 |
-| α-ProCeT | — | 2e-2 | 2e-2 |
-| β-ProCeT | Phase 1 (CeT) | 5e-3 | 5e-3 |
-| β-ProCeT | Phase 2 (ProCeT) | 2e-2 | 2e-2 |
 
 ---
 
