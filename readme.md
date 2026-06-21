@@ -131,13 +131,6 @@ for sys in simple2d barr1 barr2 barr3 barr4 cartpole; do
   done
 done
 ```
-
-Aggregate all results into a LaTeX comparison table:
-
-```bash
-python read_all_results.py
-```
-
 ---
 
 ## End-to-End Pipeline
