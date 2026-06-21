@@ -9,8 +9,6 @@ from datetime import datetime
 import numpy as np
 import torch
 
-import wandb
-
 from ..cbf.network import BarrierNN, empirical_cbf_validation
 from ..certification_results import SampleResultMaybe, SampleResultSAT, SampleResultUNSAT
 from ..executors import SinglethreadExecutor, MultithreadExecutor, MultiprocessExecutor
@@ -46,10 +44,6 @@ def verify_cbf(
     region_type="simplicial",
     visualize=False,
     use_gpu=True,
-    use_wandb=False,
-    wandb_project="cbf-verification",
-    wandb_name=None,
-    wandb_tags=None,
     batch_size=512,
     max_depth=None,
     save_verification_regions=False,
@@ -65,45 +59,15 @@ def verify_cbf(
         region_type: Type of regions to use ("hyperrectangular" or "simplicial")
         visualize: Whether to create live visualization during verification (2D only)
         use_gpu: Whether to use GPU for verification (auto-detects if None: True for single/multi-thread, False for multi-process)
-        use_wandb: Whether to use Weights & Biases for logging
-        wandb_project: W&B project name
-        wandb_name: W&B run name (defaults to system_name_cbf_verification)
-        wandb_tags: W&B tags for the run
         max_depth: Maximum depth for region splitting (None for unlimited)
 
     Returns:
         Verification results with guaranteed soundness for SAT results
     """
     if barrier_model_path is None:
-        # model_dir = "data"
-        # os.makedirs(model_dir, exist_ok=True)
-        # barrier_model_path = os.path.join(model_dir, f"{dynamics_model.system_name}_cbf.onnx")
         raise ValueError("barrier_model_path must be provided for verification")
 
     print(f"Verifying CBF: {barrier_model_path}")
-
-    # Initialize W&B if requested
-    if use_wandb:
-        config = {
-            "system_name": dynamics_model.system_name,
-            "input_dim": dynamics_model.input_dim,
-            "control_dim": dynamics_model.control_dim,
-            "barrier_model_path": barrier_model_path,
-            "executor_type": executor_type,
-            "region_type": region_type,
-            "visualize": visualize,
-        }
-
-        run_name = wandb_name if wandb_name else f"{dynamics_model.system_name}_cbf_verification"
-        tags = wandb_tags if wandb_tags else [dynamics_model.system_name, "cbf", "verification"]
-
-        wandb.init(
-            project=wandb_project,
-            name=run_name,
-            config=config,
-            tags=tags,
-        )
-        print(f"W&B run initialized: {run_name}")
 
     print(f"Using {'GPU' if use_gpu and torch.cuda.is_available() else 'CPU'} for verification")
 
@@ -178,7 +142,6 @@ def verify_cbf(
         aggregate=aggregate,
         samples=samples,
         plotter=plotter,
-        use_wandb=use_wandb,
         batch_size=batch_size,
     )
 
@@ -196,32 +159,21 @@ def verify_cbf(
     print(f"Total samples processed: {total_samples}")
     print(f"Iterations per second: {iterations_per_second:.2f} it/s")
 
-    # Prepare results for logging
-    # results = {
-    #     "regions": agg,
-    #     "certified_percentage": certified_percentage,
-    #     "uncertified_percentage": uncertified_percentage,
-    #     "computation_time": computation_time,
-    #     "total_samples": total_samples,
-    #     "iterations_per_second": iterations_per_second,
-    # }
 
-    V_safe = []              # SAT, safe_cbf_verified — 安全区中验证通过
-    V_unsafe = []             # SAT, unsafe_region — 障碍区中验证通过
-    F_h_positive_in_unsafe = []    # UNSAT, h_positive_in_unsafe — 障碍区内 h(x) >= 0 的违规
-    F_safe_cbf_violation = []      # UNSAT, safe_cbf_violation — 安全区内 CBF 条件违规
-    F_depth_limit_reached_unsafe = []     # UNSAT, depth_limit_reached_unsafe — unsafe区域达到最大分裂深度
-    F_depth_limit_reached_safe = []       # UNSAT, depth_limit_reached_safe — safe区域达到最大分裂深度
-    F_unsafe_cannot_split = []      # UNSAT, unsafe_cannot_split — 障碍区无法继续细分
+    V_safe = []              # SAT, safe_cbf_verified
+    V_unsafe = []             # SAT, unsafe_region 
+    F_h_positive_in_unsafe = []    # UNSAT, h_positive_in_unsafe
+    F_safe_cbf_violation = []      # UNSAT, safe_cbf_violation 
+    F_depth_limit_reached_unsafe = []     # UNSAT, depth_limit_reached_unsafe 
+    F_depth_limit_reached_safe = []       # UNSAT, depth_limit_reached_safe 
+    F_unsafe_cannot_split = []      # UNSAT, unsafe_cannot_split
 
     for result in agg:
         sample = result.sample
 
-        # 提取单纯形的几何坐标（转换为 numpy 数组，不保存带有计算图的 Tensor）
         if hasattr(sample, 'vertices'):
             vertices = np.array(sample.vertices, dtype=np.float32)
         elif hasattr(sample, 'center_point') and hasattr(sample, 'radius_vec'):
-            # 对于 HyperrectangularRegion，从 center 和 radius 重构 vertices
             center = np.array(sample.center_point, dtype=np.float32)
             radius = np.array(sample.radius_vec, dtype=np.float32)
             vertices = np.stack([
@@ -232,16 +184,12 @@ def verify_cbf(
             print(f"Warning: Cannot extract vertices from sample {type(sample)}")
             continue
 
-        # 根据 result_type 分类到对应列表
         if isinstance(result, SampleResultSAT):
             result_type = result.result_type
             if result_type == "unsafe_region":
                 V_unsafe.append(vertices)
             elif result_type == "safe_cbf_verified":
                 V_safe.append(vertices)
-            # else:
-            #     # 其他 SAT 类型，暂归入 safe
-            #     V_safe.append(vertices)
 
         elif isinstance(result, SampleResultUNSAT):
             result_type = result.result_type
@@ -255,9 +203,6 @@ def verify_cbf(
                 F_depth_limit_reached_safe.append(vertices)
             elif result_type == "unsafe_cannot_split":
                 F_unsafe_cannot_split.append(vertices)
-            # else:
-            #     # 未知的 UNSAT 类型，暂归入 safe_cbf_violation
-            #     F_safe_cbf_violation.append(vertices)
 
     results = {
         "regions": agg,
@@ -289,38 +234,25 @@ def verify_cbf(
         os.makedirs("plots", exist_ok=True)
         plotter.save_final_plot(plot_filename)
 
-        # Log to W&B if enabled
-        if use_wandb:
-            wandb.log(
-                {
-                    "verification/final_plot": wandb.Image(plot_filename),
-                }
-            )
-
-
-    # # ========== 保存验证区域用于修复 ==========
     if save_verification_regions:
         print("\n" + "=" * 60)
         print("SAVING VERIFICATION REGIONS FOR REPAIR")
         print("=" * 60)
 
-        # 创建六个列表用于存储验证区域（每种 result_type 单独保存）
-        V_safe = []              # SAT, safe_cbf_verified — 安全区中验证通过
-        V_unsafe = []             # SAT, unsafe_region — 障碍区中验证通过
-        F_h_positive_in_unsafe = []    # UNSAT, h_positive_in_unsafe — 障碍区内 h(x) >= 0 的违规
-        F_safe_cbf_violation = []      # UNSAT, safe_cbf_violation — 安全区内 CBF 条件违规
-        F_depth_limit_reached_unsafe = []     # UNSAT, depth_limit_reached_unsafe — unsafe区域达到最大分裂深度
-        F_depth_limit_reached_safe = []       # UNSAT, depth_limit_reached_safe — safe区域达到最大分裂深度
-        F_unsafe_cannot_split = []      # UNSAT, unsafe_cannot_split — 障碍区无法继续细分
+        V_safe = []              # SAT, safe_cbf_verified 
+        V_unsafe = []             # SAT, unsafe_region
+        F_h_positive_in_unsafe = []    # UNSAT, h_positive_in_unsafe
+        F_safe_cbf_violation = []      # UNSAT, safe_cbf_violation
+        F_depth_limit_reached_unsafe = []     # UNSAT, depth_limit_reached_unsafe
+        F_depth_limit_reached_safe = []       # UNSAT, depth_limit_reached_safe
+        F_unsafe_cannot_split = []      # UNSAT, unsafe_cannot_split
 
         for result in agg:
             sample = result.sample
 
-            # 提取单纯形的几何坐标（转换为 numpy 数组，不保存带有计算图的 Tensor）
             if hasattr(sample, 'vertices'):
                 vertices = np.array(sample.vertices, dtype=np.float32)
             elif hasattr(sample, 'center_point') and hasattr(sample, 'radius_vec'):
-                # 对于 HyperrectangularRegion，从 center 和 radius 重构 vertices
                 center = np.array(sample.center_point, dtype=np.float32)
                 radius = np.array(sample.radius_vec, dtype=np.float32)
                 vertices = np.stack([
@@ -331,16 +263,12 @@ def verify_cbf(
                 print(f"Warning: Cannot extract vertices from sample {type(sample)}")
                 continue
 
-            # 根据 result_type 分类到对应列表
             if isinstance(result, SampleResultSAT):
                 result_type = result.result_type
                 if result_type == "unsafe_region":
                     V_unsafe.append(vertices)
                 elif result_type == "safe_cbf_verified":
                     V_safe.append(vertices)
-                # else:
-                #     # 其他 SAT 类型，暂归入 safe
-                #     V_safe.append(vertices)
 
             elif isinstance(result, SampleResultUNSAT):
                 result_type = result.result_type
@@ -355,10 +283,10 @@ def verify_cbf(
                 elif result_type == "unsafe_cannot_split":
                     F_unsafe_cannot_split.append(vertices)
                 # else:
-                #     # 未知的 UNSAT 类型，暂归入 safe_cbf_violation
+                #     # Unknown UNSAT type, classify as safe_cbf_violation
                 #     F_safe_cbf_violation.append(vertices)
 
-        # 打印统计信息
+        # Print statistics
         print(f"V_safe (safe_cbf_verified): {len(V_safe)}")
         print(f"V_unsafe (unsafe_region): {len(V_unsafe)}")
         print(f"F_h_positive_in_unsafe: {len(F_h_positive_in_unsafe)}")
@@ -367,14 +295,13 @@ def verify_cbf(
         print(f"F_depth_limit_reached_safe: {len(F_depth_limit_reached_safe)}")
         print(f"F_unsafe_cannot_split: {len(F_unsafe_cannot_split)}")
 
-        # 获取激活函数名称
+        # Get activation function name
         activation_fnc = getattr(dynamics_model, 'activation_fnc', 'Unknown')
 
-        # 保存到文件（文件名包含激活函数）
-        # regions_dir = "/data/mzm/mzm_Verification/verification-of-neural-cbf-mzm4/New_repair/regions"
-        regions_dir = "/data/mzm/Repair_NCBF/New_repair/regions"
+        # Save to file (filename includes activation function)
+        regions_dir = "data/regions"
         os.makedirs(regions_dir, exist_ok=True)
-        save_path = f"{regions_dir}/verified_regions_{dynamics_model.system_name}_{activation_fnc}_v1.pt"
+        save_path = f"{regions_dir}/verified_regions_{dynamics_model.system_name}_{activation_fnc}_v1_depth{max_depth}.pt"
 
         regions_data = {
             'V_safe': V_safe,
@@ -395,29 +322,29 @@ def verify_cbf(
         torch.save(regions_data, save_path)
         print(f"Verification regions saved to: {save_path}")
 
-        # ========== 保存验证日志到文件 ==========
-        logs_dir = "/data/mzm/mzm_Verification/verification-of-neural-cbf-mzm4/New_repair/logs"
+        # ========== Save verification log to file ==========
+        logs_dir = "data/logs"
         os.makedirs(logs_dir, exist_ok=True)
 
-        # 生成日志文件名（包含时间戳）
+        # Build log filename with timestamp
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        log_filename = f"verify_{dynamics_model.system_name}_{activation_fnc}_{timestamp}.log"
+        log_filename = f"verify_{dynamics_model.system_name}_{activation_fnc}_depth{max_depth}_{timestamp}.log"
         log_path = os.path.join(logs_dir, log_filename)
 
-        # 配置日志记录器
+        # Configure logger
         logger = logging.getLogger('cbf_verification')
         logger.setLevel(logging.INFO)
-        logger.handlers = []  # 清除已有的handlers
+        logger.handlers = []  # Clear existing handlers
 
-        # 文件Handler
+        # File handler
         file_handler = logging.FileHandler(log_path, mode='w', encoding='utf-8')
         file_handler.setLevel(logging.INFO)
 
-        # 控制台Handler
+        # Console handler
         console_handler = logging.StreamHandler()
         console_handler.setLevel(logging.INFO)
 
-        # 格式化
+        # Formatter
         formatter = logging.Formatter('%(message)s')
         file_handler.setFormatter(formatter)
         console_handler.setFormatter(formatter)
@@ -425,7 +352,7 @@ def verify_cbf(
         logger.addHandler(file_handler)
         logger.addHandler(console_handler)
 
-        # 写入验证结果日志
+        # Write verification results to log
         logger.info("=" * 60)
         logger.info("CBF VERIFICATION LOG")
         logger.info("=" * 60)
@@ -459,7 +386,7 @@ def verify_cbf(
         logger.info(f"F_unsafe_cannot_split: {len(F_unsafe_cannot_split)}")
         logger.info("=" * 60)
 
-        # 关闭handlers以确保日志写入文件
+        # Close handlers to flush log to file
         file_handler.close()
         console_handler.close()
         logger.removeHandler(file_handler)
@@ -469,10 +396,6 @@ def verify_cbf(
         print("=" * 60)
     else:
         pass
-    # ========== 保存验证区域结束 ==========
-
-
-    # Note: Detailed W&B logging (statistics, splits, etc.) is handled by the executor
 
     return results
 

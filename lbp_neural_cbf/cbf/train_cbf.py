@@ -1,5 +1,4 @@
 import copy
-import warnings
 from contextlib import nullcontext
 from typing import Dict, Optional
 
@@ -11,11 +10,8 @@ import torch.optim as optim
 from torch.distributions.uniform import Uniform
 from tqdm import tqdm
 
-import wandb
-
 from ..cbf.network import BarrierNN, empirical_cbf_validation
 from ..translators import TorchTranslator
-from ..visualization.cbf_plotter import create_cbf_verification_plotter
 
 
 def save_onnx_model(model, save_path, input_size):
@@ -133,77 +129,6 @@ def generate_samples(
     # Shuffle and return
     shuffle_indices = torch.randperm(combined_batch.shape[0], device=device)
     return combined_batch[shuffle_indices]
-
-
-def collect_region_statistics(barrier_net, dynamics_model, translator, batch):
-    """
-    Compute summary statistics of barrier values over safe/unsafe regions for logging.
-    Returns NaN-filled metrics when a region is absent to avoid misleading zeros.
-    """
-    with torch.no_grad():
-        safe_mask = dynamics_model.safe_set.contains(batch, translator)
-        unsafe_mask = ~safe_mask
-        h_vals = barrier_net(batch).squeeze()
-
-    stats = {}
-    safe_count = safe_mask.sum().item()
-    unsafe_count = unsafe_mask.sum().item()
-
-    if safe_count:
-        h_safe = h_vals[safe_mask]
-        stats.update(
-            {
-                "h_safe_mean": h_safe.mean().item(),
-                "h_safe_min": h_safe.min().item(),
-                "h_safe_max": h_safe.max().item(),
-            }
-        )
-    else:
-        stats.update(
-            {
-                "h_safe_mean": float("nan"),
-                "h_safe_min": float("nan"),
-                "h_safe_max": float("nan"),
-            }
-        )
-
-    if unsafe_count:
-        h_unsafe = h_vals[unsafe_mask]
-        stats.update(
-            {
-                "h_unsafe_mean": h_unsafe.mean().item(),
-                "h_unsafe_min": h_unsafe.min().item(),
-                "h_unsafe_max": h_unsafe.max().item(),
-            }
-        )
-    else:
-        stats.update(
-            {
-                "h_unsafe_mean": float("nan"),
-                "h_unsafe_min": float("nan"),
-                "h_unsafe_max": float("nan"),
-            }
-        )
-    return stats
-
-
-def wandb_log(enabled, payload, step=None):
-    """Wrapper around wandb.log that tolerates disabled runs and logs."""
-    if not enabled or not payload:
-        return
-    try:
-        wandb.log(payload, step=step)
-    except Exception as exc:
-        warnings.warn(f"wandb.log failed: {exc}", RuntimeWarning)
-
-
-def wandb_finish(enabled, created_run):
-    """Finish a wandb run only when logging is enabled and we created it."""
-    if enabled and created_run:
-        try:
-            wandb.finish()
-        except Exception as exc:
-            warnings.warn(f"wandb.finish failed: {exc}", RuntimeWarning)
 
 
 def compute_cbf_loss(
@@ -391,10 +316,6 @@ def train_cbf(
     save_path_torch=None,
     save_path_onnx=None,
     use_amp=True,
-    use_wandb=True,
-    wandb_project="cbf-training",
-    wandb_viz_freq=500,
-    wandb_metrics_freq=10,
     validate_during_training_freq=0,
     validate_num_samples=2000,
 ):
@@ -429,17 +350,14 @@ def train_cbf(
         curriculum_learning: Whether to use curriculum learning (phase 1 then phase 2)
         curriculum_min_epochs: Minimum epochs in phase 1 before switching
         data_regen_freq: How often to regenerate training data (in epochs, default=10)
-        use_wandb: Whether to use Weights & Biases for logging (default=True)
-        wandb_project: W&B project name (default="cbf-training")
-        wandb_viz_freq: How often to log visualizations to wandb (in epochs)
-        wandb_metrics_freq: Frequency (in epochs) for logging detailed safe/unsafe statistics (default=1)
 
     Returns:
         Trained barrier function network
     """
 
     # Set manual seed for reproducibility
-    torch.manual_seed(42)
+    # torch.manual_seed(42)
+    torch.manual_seed(100)
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -448,96 +366,11 @@ def train_cbf(
     hidden_sizes = dynamics_model.hidden_sizes
     activation_fnc = dynamics_model.activation_fnc
 
-    # Track whether this function initialized a wandb run (so we only finish it)
-    wandb_enabled = bool(use_wandb)
-    created_wandb_run = False
-
-    # Initialize wandb (only initialize if there is no active run)
-    existing_run = None
-    if wandb_enabled:
-        config = {
-            "learning_rate": learning_rate,
-            "num_epochs": num_epochs,
-            "batch_size": batch_size,
-            "alpha": alpha,
-            "lambda_safe": lambda_safe,
-            "lambda_unsafe": lambda_unsafe,
-            "lambda_unsafe_max": lambda_unsafe_max,
-            "lambda_cbf": lambda_cbf,
-            "lambda_bndry": lambda_bndry,
-            "unsafe_margin": unsafe_margin,
-            "safe_margin": safe_margin,
-            "weight_decay": weight_decay,
-            "use_amp": use_amp,
-            "min_epochs": min_epochs,
-            "curriculum_learning": curriculum_learning,
-            "curriculum_min_epochs": curriculum_min_epochs,
-            "data_regen_freq": data_regen_freq,
-            "wandb_viz_freq": wandb_viz_freq,
-            "input_dim": input_size,
-            "hidden_sizes": hidden_sizes,
-            "activation_fnc": activation_fnc,
-            "system_name": dynamics_model.system_name,
-            "device": str(device),
-        }
-
-        if device.type == "cuda":
-            config["gpu_name"] = torch.cuda.get_device_name(0)
-            config["cuda_version"] = torch.version.cuda
-
-        run_name = f"{dynamics_model.system_name}_cbf"
-        tags = [dynamics_model.system_name, "cbf"]
-
-        # If a W&B run is already active in this process, update its config & tags instead
-        try:
-            existing_run = getattr(wandb, "run", None)
-        except Exception:
-            existing_run = None
-
-        if existing_run is None:
-            # Safe to initialize a new run
-            wandb.init(
-                project=wandb_project,
-                name=run_name,
-                config=config,
-                tags=tags,
-            )
-            created_wandb_run = True
-        else:
-            # Update existing run's config for visibility without re-initializing
-            try:
-                # Only set keys that are not present to avoid overwriting intentionally set values
-                for k, v in config.items():
-                    if k not in existing_run.config:
-                        existing_run.config[k] = v
-
-                # Merge tags
-                existing_tags = list(getattr(existing_run, "tags", []) or [])
-                for t in tags:
-                    if t not in existing_tags:
-                        existing_tags.append(t)
-                try:
-                    existing_run.tags = existing_tags
-                except Exception:
-                    # older wandb versions may not allow setting tags directly on run object
-                    pass
-            except Exception:
-                # If anything goes wrong updating the run, continue without failing training
-                pass
-
     # Create GradScaler for mixed precision training
     scaler = torch.amp.GradScaler(device=device.type) if use_amp and device.type == "cuda" else None
 
     # Create barrier function network
     barrier_net = BarrierNN(input_size, hidden_sizes, device=device, activation_fnc=activation_fnc)
-
-    # Watch model with wandb only if a run is active
-    wandb_run_active = False
-    if wandb_enabled:
-        try:
-            wandb_run_active = getattr(wandb, "run", None) is not None
-        except Exception:
-            wandb_run_active = False
 
     # Optimizer with L2 regularization (weight_decay)
     optimizer = optim.AdamW(barrier_net.parameters(), lr=learning_rate, weight_decay=weight_decay)
@@ -591,13 +424,6 @@ def train_cbf(
         "cbf": current_lambda_cbf,
         "bndry": lambda_bndry,
     }
-
-    # Create CBF visualization plotter (for wandb logging)
-    cbf_plotter = None
-    if wandb_enabled and dynamics_model.input_dim == 2:
-        cbf_plotter = create_cbf_verification_plotter(
-            dynamics_model, barrier_net, resolution=300, alpha=alpha, update_interval=1  # We'll manually control when to get images
-        )
 
     # Use tqdm for progress tracking
     pbar = tqdm(range(num_epochs), desc="Training", unit="epoch")
@@ -725,29 +551,8 @@ def train_cbf(
         #           Logging           #
         ###############################
 
-        wandb_payload = {
-            "loss/total": current_loss,
-            "loss/safe": loss_components["safe_loss"],
-            "loss/unsafe": loss_components["unsafe_loss"],
-            "loss/unsafe_max": loss_components["h_unsafe_max_loss"],
-            "loss/cbf": loss_components["cbf_loss"],
-            "loss/boundary": loss_components["boundary_loss"],
-            "loss/learning_rate": optimizer.param_groups[0]["lr"],
-        }
-
-        should_log_stats = bool(wandb_metrics_freq) and wandb_metrics_freq > 0 and (epoch % wandb_metrics_freq == 0)
-        if should_log_stats:
-            wandb_payload.update(collect_region_statistics(barrier_net, dynamics_model, translator, x_batch))
-
-        should_log_viz = wandb_enabled and cbf_plotter is not None and bool(wandb_viz_freq) and wandb_viz_freq > 0 and (epoch % wandb_viz_freq == 0)
-
-        if should_log_viz:
-            cbf_plotter.refresh_plots(barrier_net, samples=x_batch, plot_samples=True)
-            viz_image = cbf_plotter.get_figure_for_wandb()
-            wandb_payload["visualization/cbf_plots"] = wandb.Image(viz_image)
-
         if validate_during_training_freq and epoch > 0 and epoch % validate_during_training_freq == 0:
-            ver, cex = empirical_cbf_validation(
+            _, cex = empirical_cbf_validation(
                 barrier_net,
                 dynamics_model,
                 num_samples=validate_num_samples,
@@ -757,17 +562,6 @@ def train_cbf(
             if cex is not None:
                 if cex.shape[1] == x_batch.shape[1]:
                     x_batch_cache = torch.cat([x_batch_cache, cex], dim=0)
-
-            ver_log = {
-                "validity_score": ver["validity_score"],  # MAXIMIZE this (100+ if no violations)
-                "violation_rate": ver["violation_rate"],  # MINIMIZE
-                "unsafe_classification_rate": ver["unsafe_classification_rate"],
-                "set_invariance_satisfaction_rate": ver["set_invariance_satisfaction_rate"],
-                "invariant_set_coverage": ver["invariant_set_coverage"],
-            }
-            wandb_payload.update(ver_log)
-
-        wandb_log(wandb_enabled, wandb_payload, step=epoch)
 
         # Update progress bar with current metrics
         postfix_dict = {
@@ -794,74 +588,14 @@ def train_cbf(
     # Load best model
     if best_model_state is not None:
         barrier_net.load_state_dict(best_model_state)
-        best_total_loss, best_loss_components = compute_cbf_loss(
-            barrier_net,
-            dynamics_model,
-            x_batch,
-            translator,
-            alpha=alpha,
-            lambda_safe=loss_weights["safe"],
-            lambda_unsafe=loss_weights["unsafe"],
-            lambda_unsafe_max=loss_weights["unsafe_max"],
-            lambda_cbf=loss_weights["cbf"],
-            lambda_bndry=loss_weights["bndry"],
-            unsafe_margin=unsafe_margin,
-            safe_margin=safe_margin,
-            cbf_margin=cbf_margin,
-        )
-
-        ver, _ = empirical_cbf_validation(
-            barrier_net,
-            dynamics_model,
-            num_samples=validate_num_samples,
-            alpha=alpha,
-        )
-
-        # Log best model statistics to wandb
-        best_model_stats = {
-            "best_model/validity_score": ver["validity_score"],  # MAXIMIZE this (100+ if no violations)
-            "best_model/violation_rate": ver["violation_rate"],  # MINIMIZE
-            "best_model/unsafe_classification_rate": ver["unsafe_classification_rate"],
-            "best_model/set_invariance_satisfaction_rate": ver["set_invariance_satisfaction_rate"],
-            "best_model/invariant_set_coverage": ver["invariant_set_coverage"],
-        }
-        wandb_log(wandb_enabled, best_model_stats, step=epoch)
 
     # Save models
     if save_path_torch is None:
-        save_path_torch = f"data/mine_models_relu/{dynamics_model.system_name}_cbf.pth"
+        save_path_torch = f"data/models/relu_models/{dynamics_model.system_name}_cbf.pth"
     if save_path_onnx is None:
-        save_path_onnx = f"data/mine_models_relu/{dynamics_model.system_name}_cbf.onnx"
+        save_path_onnx = f"data/models/relu_models/{dynamics_model.system_name}_cbf.onnx"
 
     torch.save(barrier_net.state_dict(), save_path_torch)
     save_onnx_model(barrier_net, save_path_onnx, input_size)
-
-    # Log final results and save model artifacts to wandb
-    if wandb_enabled:
-        # Generate final visualization
-        if cbf_plotter is not None:
-            print("Generating final visualizations...")
-            cbf_plotter.refresh_plots(barrier_net, samples=x_batch, plot_samples=True)
-            final_viz_image = cbf_plotter.get_figure_for_wandb()
-            wandb_log(
-                wandb_enabled,
-                {"visualization/cbf_plots": wandb.Image(final_viz_image)},
-                step=epoch + 1,
-            )
-            print("Final visualizations logged to wandb")
-
-        # Save model artifacts
-        try:
-            artifact = wandb.Artifact(
-                name=f"{dynamics_model.system_name}_cbf_model", type="model", description=f"Trained CBF model for {dynamics_model.system_name}"
-            )
-            artifact.add_file(save_path_torch)
-            artifact.add_file(save_path_onnx)
-            wandb.log_artifact(artifact)
-        except Exception as exc:
-            warnings.warn(f"wandb artifact logging failed: {exc}", RuntimeWarning)
-
-        # Finish the wandb run only if we created it in this function
-        wandb_finish(wandb_enabled, created_wandb_run)
 
     return barrier_net

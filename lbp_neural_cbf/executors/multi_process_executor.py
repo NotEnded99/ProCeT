@@ -158,7 +158,7 @@ class MultiprocessExecutor:
         # This mimics the default behavior of ProcessPoolExecutor
         self.num_workers = num_workers
 
-    def execute(self, initializer, process_sample, aggregate, samples, plotter=None, use_wandb=False):
+    def execute(self, initializer, process_sample, aggregate, samples, plotter=None):
         overall_start = time.time()
 
         # Determine actual number of workers that will be used
@@ -175,13 +175,6 @@ class MultiprocessExecutor:
         agg = None
         statistics = Statistics(samples)
 
-        # Import wandb only if needed
-        if use_wandb:
-            import wandb
-
-            log_interval = 10  # Log every N samples processed
-            viz_log_interval = 500  # Log visualization every N samples (less frequent)
-
         with ProcessPoolExecutor(max_workers=self.num_workers, initializer=initializer) as executor:
             # Use a LifoQueue to achieve DFS (Depth-First Search)-like behavior.
             # For a single-threaded executor, this is true DFS, but for a multi-threaded
@@ -197,7 +190,6 @@ class MultiprocessExecutor:
 
                 waiter = ExpandableAsCompleted(futures)
                 start_time = None
-                samples_processed = 0
 
                 for future in waiter.as_completed():
                     result = future.result()
@@ -237,74 +229,6 @@ class MultiprocessExecutor:
                         f"certified: {statistics.get_certified_percentage():.4f}%, "
                         f"uncertified: {statistics.get_uncertified_percentage():.4f}%)"
                     )
-
-                    # Log to W&B periodically
-                    samples_processed += 1
-                    if use_wandb and samples_processed % log_interval == 0:
-                        # Calculate iterations per second
-                        elapsed_time = time.time() - start_time
-                        iterations_per_second = samples_processed / elapsed_time if elapsed_time > 0 else 0
-
-                        log_dict = {
-                            "verification/certified_percentage": statistics.get_certified_percentage(),
-                            "verification/uncertified_percentage": statistics.get_uncertified_percentage(),
-                            "verification/remaining_samples": len(waiter),
-                            "verification/iterations_per_second": iterations_per_second,
-                        }
-
-                        # Add split statistics if available (for CBF verification)
-                        split_stats = statistics.split_stats
-                        total_splits = split_stats["total_splits"]
-                        if total_splits > 0:
-                            split_percentages = statistics.get_split_percentages()
-                            log_dict.update(
-                                {
-                                    "splits/total_splits": total_splits,
-                                    "splits/case_2_cbf_failure": split_stats["case_2_cbf_failure"],
-                                    "splits/case_3_mixed_unsafe": split_stats["case_3_mixed_unsafe"],
-                                    "splits/case_3_fallback": split_stats["case_3_fallback"],
-                                    **split_percentages,
-                                }
-                            )
-
-                        # Add SAT result type statistics
-                        sat_stats = statistics.sat_stats
-                        total_sat = sat_stats["total_sat"]
-                        if total_sat > 0:
-                            sat_percentages = statistics.get_sat_percentages()
-                            log_dict.update(
-                                {
-                                    "sat/total_sat": total_sat,
-                                    "sat/unsafe_region": sat_stats["unsafe_region"],
-                                    "sat/safe_cbf_verified": sat_stats["safe_cbf_verified"],
-                                    "sat/mixed_unsafe_only": sat_stats["mixed_unsafe_only"],
-                                    **sat_percentages,
-                                }
-                            )
-
-                        # Add UNSAT result type statistics
-                        unsat_stats = statistics.unsat_stats
-                        total_unsat = unsat_stats["total_unsat"]
-                        if total_unsat > 0:
-                            unsat_percentages = statistics.get_unsat_percentages()
-                            log_dict.update(
-                                {
-                                    "unsat/total_unsat": total_unsat,
-                                    "unsat/h_positive_in_unsafe": unsat_stats["h_positive_in_unsafe"],
-                                    "unsat/safe_cbf_violation": unsat_stats["safe_cbf_violation"],
-                                    "unsat/indeterminate_volume_limit": unsat_stats["indeterminate_volume_limit"],
-                                    **unsat_percentages,
-                                }
-                            )
-
-                        # Add visualization if plotter is available and it's time to log it
-                        if plotter is not None and samples_processed % viz_log_interval == 0:
-                            try:
-                                log_dict["verification/progress_plot"] = wandb.Image(plotter.get_figure_for_wandb())
-                            except Exception as e:
-                                print(f"Warning: Failed to log visualization to wandb: {e}")
-
-                        wandb.log(log_dict, step=samples_processed)
 
         certified_pct = statistics.get_certified_percentage()
         uncertified_pct = statistics.get_uncertified_percentage()

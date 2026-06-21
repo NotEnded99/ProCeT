@@ -4,7 +4,7 @@ CBF-specific visualization for barrier functions, gradients, and verification re
 
 import matplotlib
 
-# Use non-interactive backend for wandb-only visualization
+# Use non-interactive backend for headless visualization
 matplotlib.use("Agg")
 import matplotlib.colors as mcolors
 import matplotlib.pyplot as plt
@@ -674,7 +674,7 @@ class CBFVerificationPlotter:
 
         self._apply_verification_legend()
 
-        # Draw to ensure figure state is current for downstream consumers (e.g., wandb.Image)
+        # Draw to ensure figure state is current for downstream consumers
         self.fig.canvas.draw()
         self.updates_since_last_draw = 0
 
@@ -691,28 +691,6 @@ class CBFVerificationPlotter:
             print(f"Final CBF verification plot saved to {filename}")
         except Exception as e:
             print(f"Failed to save plot: {e}")
-
-    def get_figure_for_wandb(self):
-        """
-        Get the current matplotlib figure for wandb logging.
-        This creates a temporary image and returns it for wandb.Image.
-        Forces a draw if there are pending updates.
-        """
-        import io
-
-        from PIL import Image
-
-        # Flush any pending patches and redraw
-        self._flush_pending_patches()
-
-        # Save figure to buffer with lower DPI and without tight layout for speed
-        buf = io.BytesIO()
-        self.fig.savefig(buf, format="png", dpi=100, bbox_inches=None)
-        buf.seek(0)
-
-        # Load as PIL Image
-        img = Image.open(buf)
-        return img
 
     def get_verification_statistics(self):
         """Get statistics about verification regions."""
