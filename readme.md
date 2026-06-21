@@ -187,7 +187,7 @@ All three methods share the same outer loop (load → verify → train → re-ve
 | Top-N vulnerable protection | No | Yes (Jacobian-based) | Yes (after escalation) |
 | Per-step audit | No | Yes | Yes (after escalation) |
 | Per-step compute | Cheap | Expensive (Jacobian + SOCP) | Cheap, then expensive |
-| Supported activations | Tanh, Sigmoid, Relu, LeakyRelu | Tanh, Sigmoid (smooth only) | Tanh, Sigmoid |
+| Supported activations | Tanh, Sigmoid | Tanh, Sigmoid (smooth only) | Tanh, Sigmoid |
 
 ### β-ProCeT escalation
 
